@@ -14,11 +14,7 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "Qihe",
-            path: "Qihe",
-            resources: [
-                .process("Resources")
-            ]
+            path: "Qihe"
         )
     ]
 )
-
