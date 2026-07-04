@@ -1,8 +1,8 @@
 import Foundation
 
 enum AppRoute: Hashable {
-    case chat(localRecordId: UUID?)
-    case review(prefill: String?)
+    case chat(localRecordId: UUID?, initialMessage: String? = nil)
+    case review(prefill: String?, attachment: UploadedFile? = nil)
     case generate(prefill: String?)
     case reviewResult(recordId: UUID)
     case subject(recordId: UUID)

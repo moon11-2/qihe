@@ -5,6 +5,7 @@ struct ChatView: View {
     @EnvironmentObject private var historyStore: HistoryStore
 
     private let localRecordId: UUID?
+    private let initialMessage: String?
     private let apiClient: APIClient
 
     @State private var recordId: UUID?
@@ -15,9 +16,11 @@ struct ChatView: View {
     @State private var suggestedModes: Set<ContractMode> = []
     @State private var isSending = false
     @State private var didRestoreHistory = false
+    @State private var didSubmitInitialMessage = false
 
-    init(localRecordId: UUID?, apiClient: APIClient = .local) {
+    init(localRecordId: UUID?, initialMessage: String? = nil, apiClient: APIClient = .local) {
         self.localRecordId = localRecordId
+        self.initialMessage = initialMessage
         self.apiClient = apiClient
         _recordId = State(initialValue: localRecordId)
     }
@@ -58,6 +61,7 @@ struct ChatView: View {
                 }
                 .onAppear {
                     restoreHistoryIfNeeded()
+                    submitInitialMessageIfNeeded()
                     scrollToBottom(proxy, animated: false)
                 }
             }
@@ -73,14 +77,14 @@ struct ChatView: View {
         PaperCard(padding: 14) {
             VStack(spacing: 12) {
                 ProcessNode(
-                    title: "上下文",
-                    detail: messages.isEmpty ? "尚未开始" : "\(messages.count) 条消息已保存在本地上下文",
+                    title: "解析文本",
+                    detail: messages.isEmpty ? "等待你的第一句话" : "\(messages.count) 条消息已保存在本地上下文",
                     isActive: isSending,
                     isDone: !messages.isEmpty
                 )
 
                 ProcessNode(
-                    title: "下一步",
+                    title: "识别意图",
                     detail: nextStepDetail,
                     isActive: latestUserInput != nil && !isSending,
                     isDone: !suggestedModes.isEmpty
@@ -93,7 +97,7 @@ struct ChatView: View {
         PaperCard {
             EmptyStateView(
                 title: "开始过程对话",
-                detail: "输入合同背景、审查问题或生成需求；对话会作为后续审查和生成的预填内容。"
+                detail: "输入合同内容、审查问题或生成需求；契合会推荐进入审查或生成。"
             )
         }
     }
@@ -250,9 +254,32 @@ struct ChatView: View {
         guard !isSending, !text.isEmpty else {
             return
         }
-
-        let userMessage = ChatMessage(role: .user, content: text)
         input = ""
+        submitUserText(text)
+    }
+
+    @MainActor
+    private func submitInitialMessageIfNeeded() {
+        guard !didSubmitInitialMessage else {
+            return
+        }
+        didSubmitInitialMessage = true
+
+        guard localRecordId == nil,
+              messages.isEmpty,
+              let text = initialMessage?.trimmedForInput.nilIfBlank else {
+            return
+        }
+
+        submitUserText(text)
+    }
+
+    @MainActor
+    private func submitUserText(_ text: String) {
+        guard !isSending, !text.isEmpty else {
+            return
+        }
+        let userMessage = ChatMessage(role: .user, content: text)
         errorMessage = nil
         lastFailedUserMessageId = nil
         suggestedModes = []
@@ -329,6 +356,9 @@ struct ChatView: View {
 
     private func modes(from response: ChatResponse) -> Set<ContractMode> {
         var modes = Set(response.options)
+        if let route = response.route {
+            modes.insert(route)
+        }
         if let intentMode = ContractMode(rawValue: response.intent) {
             modes.insert(intentMode)
         }

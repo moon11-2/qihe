@@ -8,10 +8,10 @@ struct RootView: View {
             HomeView()
                 .navigationDestination(for: AppRoute.self) { route in
                     switch route {
-                    case let .chat(localRecordId):
-                        ChatView(localRecordId: localRecordId)
-                    case let .review(prefill):
-                        ReviewInputView(prefill: prefill)
+                    case let .chat(localRecordId, initialMessage):
+                        ChatView(localRecordId: localRecordId, initialMessage: initialMessage)
+                    case let .review(prefill, attachment):
+                        ReviewInputView(prefill: prefill, initialAttachment: attachment)
                     case let .generate(prefill):
                         GenerateInputView(prefill: prefill)
                     case let .reviewResult(recordId):

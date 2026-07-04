@@ -248,10 +248,11 @@ enum APIClientError: LocalizedError {
 }
 
 enum QiheDocumentValidator {
-    static let allowedExtensions: Set<String> = ["pdf", "docx", "txt"]
+    static let allowedExtensions: Set<String> = ["pdf", "doc", "docx", "txt"]
     static let allowedTypes: [UTType] = [
         .pdf,
         .plainText,
+        UTType(importedAs: "com.microsoft.word.doc"),
         UTType(importedAs: "org.openxmlformats.wordprocessingml.document")
     ]
 
@@ -265,6 +266,8 @@ enum QiheDocumentValidator {
         switch url.pathExtension.lowercased() {
         case "pdf":
             return "application/pdf"
+        case "doc":
+            return "application/msword"
         case "docx":
             return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         case "txt":

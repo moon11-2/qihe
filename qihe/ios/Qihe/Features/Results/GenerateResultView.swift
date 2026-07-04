@@ -10,6 +10,7 @@ struct GenerateResultView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var historyStore: HistoryStore
     let recordId: UUID
+    @State private var fieldValues: [String: String] = [:]
     @State private var isExporting = false
     @State private var shareDocument: ShareDocument?
     @State private var errorMessage: String?
@@ -21,7 +22,7 @@ struct GenerateResultView: View {
 
             if let payload = historyStore.record(id: recordId)?.generatePayload {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 14) {
                         if let errorMessage {
                             ErrorBanner(message: errorMessage, retryTitle: "重试导出") {
                                 Task {
@@ -30,10 +31,15 @@ struct GenerateResultView: View {
                             }
                         }
 
-                        header(payload)
-                        draft(payload.result)
-                        missingFields(payload.result)
+                        contractSheet(payload)
+                        missingFieldsForm(payload)
                         checklist(payload.result)
+                        actions(payload)
+
+                        Text("AI 辅助起草，不构成法律意见")
+                            .font(QiheFont.caption(size: 11))
+                            .foregroundStyle(QiheColor.muted)
+                            .frame(maxWidth: .infinity)
                     }
                     .padding(20)
                 }
@@ -45,7 +51,7 @@ struct GenerateResultView: View {
                 .padding(24)
             }
         }
-        .navigationTitle("生成结果")
+        .navigationTitle("合同草案")
         .qiheInlineNavigationTitle()
         .toolbar {
             ToolbarItem(placement: .qiheTopTrailing) {
@@ -68,68 +74,98 @@ struct GenerateResultView: View {
         }
     }
 
-    private func header(_ payload: GenerateHistoryPayload) -> some View {
-        PaperCard {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top, spacing: 12) {
-                    SealMark(size: 38)
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(payload.result.displayTitle)
-                            .font(QiheFont.title(size: 24))
-                            .foregroundStyle(QiheColor.ink)
-
-                        Text("草案生成后，请补齐字段并完成签署前核对。")
-                            .font(QiheFont.caption())
-                            .foregroundStyle(QiheColor.muted)
-                    }
-
-                    Spacer()
+    private func contractSheet(_ payload: GenerateHistoryPayload) -> some View {
+        let draft = renderedDraft(payload.result)
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                SealMark(size: 32)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(payload.result.displayTitle)
+                        .font(QiheFont.title(size: 16))
+                        .foregroundStyle(QiheColor.ink)
+                    Text(payload.attachment?.filename ?? "契合起草 · 参照《民法典》合同编体例")
+                        .font(QiheFont.caption(size: 11))
+                        .foregroundStyle(QiheColor.muted)
                 }
-
-                HStack(spacing: 10) {
-                    QiheSecondaryButton(
-                        title: didCopy ? "已复制" : "复制草案",
-                        systemImage: didCopy ? "checkmark" : "doc.on.doc"
-                    ) {
-                        copyDraft(payload.result.draft ?? "")
-                        didCopy = true
-                    }
-
-                    QiheSecondaryButton(title: "继续修改", systemImage: "square.and.pencil") {
-                        appState.path.append(.generate(prefill: payload.result.draft ?? payload.requestText))
-                    }
-                }
+                Spacer()
             }
-        }
-    }
 
-    private func draft(_ result: GenerateResult) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            QiheSectionHeader(title: "合同草案", subtitle: result.source?.filename)
+            VStack(spacing: 12) {
+                Text(payload.result.displayTitle)
+                    .font(QiheFont.title(size: 19))
+                    .foregroundStyle(QiheColor.ink)
+                    .frame(maxWidth: .infinity)
 
-            PaperCard {
-                Text(result.draft?.nilIfBlank ?? "暂无合同草案。")
-                    .font(QiheFont.body(size: 14))
+                Text("草案 · 契合起草 · 参照《民法典》合同编体例")
+                    .font(QiheFont.caption(size: 10))
+                    .foregroundStyle(QiheColor.muted)
+                    .frame(maxWidth: .infinity)
+
+                Text(draft.nilIfBlank ?? "暂无合同草案。")
+                    .font(QiheFont.body(size: 13))
                     .foregroundStyle(QiheColor.inkSoft)
+                    .lineSpacing(6)
                     .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(18)
+            .background(QiheColor.card)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(QiheColor.lineStrong, lineWidth: 1)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .stroke(QiheColor.line, lineWidth: 1)
+                    .padding(6)
+            )
+            .overlay(alignment: .bottomTrailing) {
+                Text("待簽\n用印")
+                    .font(QiheFont.title(size: 12))
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(QiheColor.seal.opacity(0.58))
+                    .frame(width: 54, height: 54)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(QiheColor.seal.opacity(0.48), lineWidth: 2.5)
+                    )
+                    .rotationEffect(.degrees(-7))
+                    .padding(14)
             }
         }
     }
 
-    private func missingFields(_ result: GenerateResult) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            QiheSectionHeader(title: "待补充字段", subtitle: "\(result.fieldsToComplete.count) 项")
+    private func missingFieldsForm(_ payload: GenerateHistoryPayload) -> some View {
+        let fields = fieldNames(for: payload.result)
+        return PaperCard(padding: 14) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("待补充信息")
+                    .font(QiheFont.title(size: 14))
+                    .foregroundStyle(QiheColor.ink)
 
-            PaperCard {
-                VStack(alignment: .leading, spacing: 10) {
-                    if result.fieldsToComplete.isEmpty {
-                        Text("暂无待补充字段。")
-                            .font(QiheFont.body(size: 14))
-                            .foregroundStyle(QiheColor.muted)
-                    } else {
-                        ForEach(result.fieldsToComplete, id: \.self) { field in
-                            ResultLine(systemImage: "square.and.pencil", text: field)
+                if fields.isEmpty {
+                    Text("暂无待补充字段。")
+                        .font(QiheFont.body(size: 14))
+                        .foregroundStyle(QiheColor.muted)
+                } else {
+                    ForEach(fields, id: \.self) { field in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(field)
+                                .font(QiheFont.caption(size: 12, weight: .semibold))
+                                .foregroundStyle(QiheColor.seal)
+
+                            TextField("填写\(field)", text: binding(for: field))
+                                .font(QiheFont.body(size: 14))
+                                .foregroundStyle(QiheColor.ink)
+                                .padding(.horizontal, 10)
+                                .frame(height: 38)
+                                .background(QiheColor.paper)
+                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .stroke(QiheColor.line, lineWidth: 1)
+                                )
                         }
                     }
                 }
@@ -138,23 +174,125 @@ struct GenerateResultView: View {
     }
 
     private func checklist(_ result: GenerateResult) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            QiheSectionHeader(title: "签署前清单", subtitle: "\(result.checklist.count) 项")
+        PaperCard(padding: 14) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("签署前清单")
+                    .font(QiheFont.title(size: 14))
+                    .foregroundStyle(QiheColor.ink)
 
-            PaperCard {
-                VStack(alignment: .leading, spacing: 10) {
-                    if result.checklist.isEmpty {
-                        Text("暂无签署前清单。")
-                            .font(QiheFont.body(size: 14))
-                            .foregroundStyle(QiheColor.muted)
-                    } else {
-                        ForEach(result.checklist, id: \.self) { item in
-                            ResultLine(systemImage: "checkmark.seal", text: item)
+                if result.checklist.isEmpty {
+                    Text("暂无签署前清单。")
+                        .font(QiheFont.body(size: 14))
+                        .foregroundStyle(QiheColor.muted)
+                } else {
+                    ForEach(result.checklist, id: \.self) { item in
+                        HStack(alignment: .top, spacing: 10) {
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .stroke(QiheColor.muted, lineWidth: 1.4)
+                                .frame(width: 14, height: 14)
+                                .padding(.top, 3)
+
+                            Text(item)
+                                .font(QiheFont.body(size: 12.5))
+                                .foregroundStyle(QiheColor.inkSoft)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }
             }
         }
+    }
+
+    private func actions(_ payload: GenerateHistoryPayload) -> some View {
+        HStack(spacing: 10) {
+            QiheSecondaryButton(
+                title: didCopy ? "已复制" : "复制全文",
+                systemImage: didCopy ? "checkmark" : "doc.on.doc"
+            ) {
+                copyDraft(renderedDraft(payload.result))
+                didCopy = true
+            }
+
+            QiheSecondaryButton(
+                title: isExporting ? "导出中" : "导出",
+                systemImage: "square.and.arrow.up",
+                isDisabled: isExporting
+            ) {
+                Task {
+                    await exportWord(payload)
+                }
+            }
+
+            QihePrimaryButton(title: "继续修改", systemImage: "square.and.pencil") {
+                appState.path.append(.generate(prefill: renderedDraft(payload.result)))
+            }
+        }
+    }
+
+    private func binding(for field: String) -> Binding<String> {
+        Binding(
+            get: { fieldValues[field, default: ""] },
+            set: { fieldValues[field] = $0 }
+        )
+    }
+
+    private func fieldNames(for result: GenerateResult) -> [String] {
+        var names: [String] = []
+        for field in result.fieldsToComplete {
+            appendUnique(field, to: &names)
+        }
+        for field in placeholders(in: result.draft ?? "") {
+            appendUnique(field, to: &names)
+        }
+        return names
+    }
+
+    private func renderedDraft(_ result: GenerateResult) -> String {
+        var draft = result.draft ?? ""
+        for field in fieldNames(for: result) {
+            guard let value = fieldValues[field]?.nilIfBlank else {
+                continue
+            }
+            let tokens = [
+                "【待补充：\(field)】",
+                "【待补充:\(field)】",
+                "[\(field)]"
+            ]
+            for token in tokens {
+                draft = draft.replacingOccurrences(of: token, with: value)
+            }
+        }
+        return draft
+    }
+
+    private func placeholders(in draft: String) -> [String] {
+        var values: [String] = []
+        let patterns = [
+            #"【待补充[:：]([^】]+)】"#,
+            #"\[([^\]\n]{1,40})\]"#
+        ]
+
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else {
+                continue
+            }
+            let nsRange = NSRange(draft.startIndex..<draft.endIndex, in: draft)
+            let matches = regex.matches(in: draft, range: nsRange)
+            for match in matches where match.numberOfRanges > 1 {
+                guard let range = Range(match.range(at: 1), in: draft) else {
+                    continue
+                }
+                appendUnique(String(draft[range]), to: &values)
+            }
+        }
+        return values
+    }
+
+    private func appendUnique(_ value: String, to values: inout [String]) {
+        guard let cleaned = value.nilIfBlank, !values.contains(cleaned) else {
+            return
+        }
+        values.append(cleaned)
     }
 
     private func exportWord(_ payload: GenerateHistoryPayload) async {
@@ -163,9 +301,11 @@ struct GenerateResultView: View {
         defer { isExporting = false }
 
         do {
+            var result = payload.result
+            result.draft = renderedDraft(payload.result)
             let url = try await appState.apiClient.exportGenerateWord(
-                title: payload.result.displayTitle,
-                payload: payload.result
+                title: result.displayTitle,
+                payload: result
             )
             shareDocument = ShareDocument(url: url)
         } catch {
@@ -180,24 +320,5 @@ struct GenerateResultView: View {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(value, forType: .string)
         #endif
-    }
-}
-
-private struct ResultLine: View {
-    let systemImage: String
-    let text: String
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: systemImage)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(QiheColor.navy)
-                .frame(width: 20)
-
-            Text(text)
-                .font(QiheFont.body(size: 14))
-                .foregroundStyle(QiheColor.inkSoft)
-                .fixedSize(horizontal: false, vertical: true)
-        }
     }
 }

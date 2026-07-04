@@ -51,13 +51,51 @@ struct ChatRequest: Codable, Hashable {
     let messages: [ChatAPIMessage]
 }
 
-struct ChatResponse: Codable, Hashable {
+struct ChatResponse: Decodable, Hashable {
     let type: String
     let intent: String
     let reply: String
     let route: ContractMode?
     let needInput: [String]
     let options: [ContractMode]
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case intent
+        case reply
+        case route
+        case needInput
+        case needInputSnake = "need_input"
+        case options
+    }
+
+    init(
+        type: String = "chat",
+        intent: String = "",
+        reply: String,
+        route: ContractMode? = nil,
+        needInput: [String] = [],
+        options: [ContractMode] = []
+    ) {
+        self.type = type
+        self.intent = intent
+        self.reply = reply
+        self.route = route
+        self.needInput = needInput
+        self.options = options
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try container.decodeIfPresent(String.self, forKey: .type) ?? "chat"
+        intent = try container.decodeIfPresent(String.self, forKey: .intent) ?? ""
+        reply = try container.decodeIfPresent(String.self, forKey: .reply) ?? ""
+        route = try container.decodeIfPresent(ContractMode.self, forKey: .route)
+        needInput = try container.decodeIfPresent([String].self, forKey: .needInput)
+            ?? container.decodeIfPresent([String].self, forKey: .needInputSnake)
+            ?? []
+        options = try container.decodeIfPresent([ContractMode].self, forKey: .options) ?? []
+    }
 }
 
 struct UploadedFile: Identifiable, Codable, Hashable {
@@ -158,13 +196,13 @@ enum RiskLevel: String, Codable, CaseIterable, Hashable {
     init(label: String?) {
         let normalized = (label ?? "").trimmedForInput.lowercased()
         switch normalized {
-        case "high", "高", "高风险", "严重":
+        case "high", "高", "高风险", "高風險", "严重":
             self = .high
-        case "medium", "mid", "中", "中风险":
+        case "medium", "mid", "中", "中风险", "中風險", "中等风险":
             self = .medium
-        case "low", "低", "低风险":
+        case "low", "低", "低风险", "低風險":
             self = .low
-        case "pending", "待审查", "待定":
+        case "pending", "待审查", "待確認", "待确认", "待定":
             self = .pending
         default:
             self = .unknown
@@ -189,65 +227,125 @@ enum RiskLevel: String, Codable, CaseIterable, Hashable {
 
 struct RiskItem: Identifiable, Codable, Hashable {
     var id: UUID
+    var riskTitle: String?
     var clause: String?
     var risk: String?
+    var riskAnalysis: String?
     var riskLevel: RiskLevel
     var suggestion: String?
+    var revisionSuggestion: String?
+    var suggestedReplacement: String?
     var basis: String?
+    var legalBasis: [String]?
     var originalText: String?
 
     init(
         id: UUID = UUID(),
+        riskTitle: String? = nil,
         clause: String? = nil,
         risk: String? = nil,
+        riskAnalysis: String? = nil,
         riskLevel: RiskLevel = .unknown,
         suggestion: String? = nil,
+        revisionSuggestion: String? = nil,
+        suggestedReplacement: String? = nil,
         basis: String? = nil,
+        legalBasis: [String]? = nil,
         originalText: String? = nil
     ) {
         self.id = id
+        self.riskTitle = riskTitle
         self.clause = clause
         self.risk = risk
+        self.riskAnalysis = riskAnalysis
         self.riskLevel = riskLevel
         self.suggestion = suggestion
+        self.revisionSuggestion = revisionSuggestion
+        self.suggestedReplacement = suggestedReplacement
         self.basis = basis
+        self.legalBasis = legalBasis
         self.originalText = originalText
     }
 
     enum CodingKeys: String, CodingKey {
+        case riskTitle
+        case riskTitleSnake = "risk_title"
+        case title
         case clause
         case risk
+        case riskAnalysis
+        case riskAnalysisSnake = "risk_analysis"
+        case description
         case riskLevel
+        case riskLevelSnake = "risk_level"
         case severity
         case level
         case suggestion
+        case revisionSuggestion
+        case revisionSuggestionSnake = "revision_suggestion"
+        case suggestedReplacement
+        case suggestedReplacementSnake = "suggested_replacement"
+        case replacement
         case basis
+        case legalBasis
+        case legalBasisSnake = "legal_basis"
         case originalText
+        case originalTextSnake = "original_text"
         case text
+    }
+
+    var displayTitle: String {
+        riskTitle?.nilIfBlank
+            ?? clause?.nilIfBlank
+            ?? risk?.nilIfBlank
+            ?? "未命名风险"
+    }
+
+    var displayAnalysis: String? {
+        riskAnalysis?.nilIfBlank ?? risk?.nilIfBlank
+    }
+
+    var displaySuggestion: String? {
+        revisionSuggestion?.nilIfBlank ?? suggestion?.nilIfBlank
+    }
+
+    var displayLegalBasis: String? {
+        if let legalBasis, !legalBasis.isEmpty {
+            let joined = legalBasis.compactMap(\.nilIfBlank).joined(separator: " · ")
+            return joined.nilIfBlank
+        }
+        return basis?.nilIfBlank
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = UUID()
+        riskTitle = try container.decodeStringIfPresent(forKeys: [.riskTitle, .riskTitleSnake, .title])
         clause = try container.decodeIfPresent(String.self, forKey: .clause)
-        risk = try container.decodeIfPresent(String.self, forKey: .risk)
-        let levelLabel = try container.decodeIfPresent(String.self, forKey: .riskLevel)
-            ?? container.decodeIfPresent(String.self, forKey: .severity)
-            ?? container.decodeIfPresent(String.self, forKey: .level)
+        risk = try container.decodeStringIfPresent(forKeys: [.risk])
+        riskAnalysis = try container.decodeStringIfPresent(forKeys: [.riskAnalysis, .riskAnalysisSnake, .description])
+        let levelLabel = try container.decodeStringIfPresent(forKeys: [.riskLevel, .riskLevelSnake, .severity, .level])
         riskLevel = RiskLevel(label: levelLabel)
-        suggestion = try container.decodeIfPresent(String.self, forKey: .suggestion)
-        basis = try container.decodeIfPresent(String.self, forKey: .basis)
-        originalText = try container.decodeIfPresent(String.self, forKey: .originalText)
-            ?? container.decodeIfPresent(String.self, forKey: .text)
+        suggestion = try container.decodeStringIfPresent(forKeys: [.suggestion])
+        revisionSuggestion = try container.decodeStringIfPresent(forKeys: [.revisionSuggestion, .revisionSuggestionSnake])
+        suggestedReplacement = try container.decodeStringIfPresent(forKeys: [.suggestedReplacement, .suggestedReplacementSnake, .replacement])
+        basis = try container.decodeStringIfPresent(forKeys: [.basis])
+        legalBasis = try container.decodeStringListIfPresent(forKeys: [.legalBasis, .legalBasisSnake])
+        originalText = try container.decodeStringIfPresent(forKeys: [.originalText, .originalTextSnake, .text])
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(riskTitle, forKey: .riskTitle)
         try container.encodeIfPresent(clause, forKey: .clause)
         try container.encodeIfPresent(risk, forKey: .risk)
+        try container.encodeIfPresent(riskAnalysis, forKey: .riskAnalysis)
         try container.encode(riskLevel, forKey: .riskLevel)
         try container.encodeIfPresent(suggestion, forKey: .suggestion)
+        try container.encodeIfPresent(revisionSuggestion, forKey: .revisionSuggestion)
+        try container.encodeIfPresent(suggestedReplacement, forKey: .suggestedReplacement)
         try container.encodeIfPresent(basis, forKey: .basis)
+        try container.encodeIfPresent(legalBasis, forKey: .legalBasis)
         try container.encodeIfPresent(originalText, forKey: .originalText)
     }
 }
@@ -258,6 +356,7 @@ struct ReviewResult: Codable, Hashable {
     var reviewBasis: String?
     var riskLevel: RiskLevel?
     var score: Int?
+    var riskCount: Int?
     var source: ContractSource?
     var clauseReviews: [RiskItem]?
     var parties: JSONValue?
@@ -276,14 +375,25 @@ struct ReviewResult: Codable, Hashable {
         clauseReviews ?? []
     }
 
+    var displayedRiskCount: Int {
+        riskCount ?? risks.count
+    }
+
     enum CodingKeys: String, CodingKey {
         case title
         case summary
         case reviewBasis
+        case reviewBasisSnake = "review_basis"
         case riskLevel
+        case riskLevelSnake = "risk_level"
         case score
+        case riskCount
+        case riskCountSnake = "risk_count"
         case source
         case clauseReviews
+        case clauseReviewsSnake = "clause_reviews"
+        case riskItems
+        case riskItemsSnake = "risk_items"
         case parties
     }
 
@@ -293,6 +403,7 @@ struct ReviewResult: Codable, Hashable {
         reviewBasis: String? = nil,
         riskLevel: RiskLevel? = nil,
         score: Int? = nil,
+        riskCount: Int? = nil,
         source: ContractSource? = nil,
         clauseReviews: [RiskItem]? = nil,
         parties: JSONValue? = nil
@@ -302,6 +413,7 @@ struct ReviewResult: Codable, Hashable {
         self.reviewBasis = reviewBasis
         self.riskLevel = riskLevel
         self.score = score
+        self.riskCount = riskCount
         self.source = source
         self.clauseReviews = clauseReviews
         self.parties = parties
@@ -311,16 +423,31 @@ struct ReviewResult: Codable, Hashable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         title = try container.decodeIfPresent(String.self, forKey: .title)
         summary = try container.decodeIfPresent(String.self, forKey: .summary)
-        reviewBasis = try container.decodeIfPresent(String.self, forKey: .reviewBasis)
-        if let riskLabel = try container.decodeIfPresent(String.self, forKey: .riskLevel) {
-            riskLevel = RiskLevel(label: riskLabel)
-        } else {
-            riskLevel = try container.decodeIfPresent(RiskLevel.self, forKey: .riskLevel)
-        }
+        reviewBasis = try container.decodeStringIfPresent(forKeys: [.reviewBasis, .reviewBasisSnake])
+        riskLevel = RiskLevel(label: try container.decodeStringIfPresent(forKeys: [.riskLevel, .riskLevelSnake]))
         score = try container.decodeIfPresent(Int.self, forKey: .score)
+        riskCount = try container.decodeIntIfPresent(forKeys: [.riskCount, .riskCountSnake])
         source = try container.decodeIfPresent(ContractSource.self, forKey: .source)
-        clauseReviews = try container.decodeIfPresent([RiskItem].self, forKey: .clauseReviews)
+        clauseReviews = try container.decodeIfPresent([RiskItem].self, forKeys: [
+            .clauseReviews,
+            .clauseReviewsSnake,
+            .riskItems,
+            .riskItemsSnake
+        ])
         parties = try container.decodeIfPresent(JSONValue.self, forKey: .parties)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(title, forKey: .title)
+        try container.encodeIfPresent(summary, forKey: .summary)
+        try container.encodeIfPresent(reviewBasis, forKey: .reviewBasis)
+        try container.encodeIfPresent(riskLevel, forKey: .riskLevel)
+        try container.encodeIfPresent(score, forKey: .score)
+        try container.encodeIfPresent(riskCount, forKey: .riskCount)
+        try container.encodeIfPresent(source, forKey: .source)
+        try container.encodeIfPresent(clauseReviews, forKey: .clauseReviews)
+        try container.encodeIfPresent(parties, forKey: .parties)
     }
 }
 
@@ -469,6 +596,183 @@ enum JSONValue: Codable, Hashable {
         case .null:
             return "暂无信息。"
         }
+    }
+
+    var subjectFacts: [ContractSubjectFact] {
+        guard case let .object(values) = self else {
+            return []
+        }
+
+        return ContractSubjectField.allCases.compactMap { field in
+            guard let value = values.subjectValue(for: field)?.nilIfBlank else {
+                return nil
+            }
+            return ContractSubjectFact(field: field, value: value)
+        }
+    }
+
+    var hasIncompleteCoreSubjectInfo: Bool {
+        guard case let .object(values) = self else {
+            return true
+        }
+
+        return ContractSubjectField.coreFields.contains { field in
+            values.subjectValue(for: field)?.nilIfBlank == nil
+        }
+    }
+}
+
+struct ContractSubjectFact: Identifiable, Hashable {
+    var field: ContractSubjectField
+    var value: String
+
+    var id: String {
+        field.rawValue
+    }
+
+    var label: String {
+        field.label
+    }
+}
+
+enum ContractSubjectField: String, CaseIterable, Hashable {
+    case partyA
+    case partyB
+    case contractType
+    case amount
+    case term
+    case jurisdiction
+
+    static let coreFields: [ContractSubjectField] = [.partyB, .amount, .term]
+
+    var label: String {
+        switch self {
+        case .partyA:
+            return "甲方"
+        case .partyB:
+            return "乙方"
+        case .contractType:
+            return "合同类型"
+        case .amount:
+            return "金额"
+        case .term:
+            return "期限"
+        case .jurisdiction:
+            return "司法辖区"
+        }
+    }
+
+    var lookupKeys: [String] {
+        switch self {
+        case .partyA:
+            return ["甲方", "party_a", "partyA", "出租方", "委托方", "买方"]
+        case .partyB:
+            return ["乙方", "party_b", "partyB", "承租方", "受托方", "卖方"]
+        case .contractType:
+            return ["合同类型", "contract_type", "contractType", "类型"]
+        case .amount:
+            return ["金额", "合同金额", "amount", "价款", "租金", "总价"]
+        case .term:
+            return ["期限", "合同期限", "term", "履行期限", "租赁期限"]
+        case .jurisdiction:
+            return ["司法辖区", "jurisdiction", "适用法律", "管辖", "争议解决"]
+        }
+    }
+}
+
+private extension Dictionary where Key == String, Value == JSONValue {
+    func subjectValue(for field: ContractSubjectField) -> String? {
+        for key in field.lookupKeys {
+            if let value = self[key]?.plainDisplayString.nilIfBlank {
+                return value
+            }
+        }
+        return nil
+    }
+}
+
+private extension JSONValue {
+    var plainDisplayString: String {
+        switch self {
+        case let .string(value):
+            return value
+        case let .number(value):
+            if value.rounded() == value {
+                return String(Int(value))
+            }
+            return String(value)
+        case let .bool(value):
+            return value ? "是" : "否"
+        case let .array(values):
+            return values
+                .map(\.plainDisplayString)
+                .compactMap(\.nilIfBlank)
+                .joined(separator: "、")
+        case let .object(values):
+            return values
+                .sorted { $0.key < $1.key }
+                .map { $0.value.plainDisplayString }
+                .compactMap(\.nilIfBlank)
+                .joined(separator: "、")
+        case .null:
+            return ""
+        }
+    }
+}
+
+private extension KeyedDecodingContainer {
+    func decodeStringIfPresent(forKeys keys: [Key]) throws -> String? {
+        for key in keys {
+            if let value = try? decodeIfPresent(String.self, forKey: key)?.nilIfBlank {
+                return value
+            }
+            if let value = try? decodeIfPresent(Double.self, forKey: key) {
+                if value.rounded() == value {
+                    return String(Int(value))
+                }
+                return String(value)
+            }
+        }
+        return nil
+    }
+
+    func decodeStringListIfPresent(forKeys keys: [Key]) throws -> [String]? {
+        for key in keys {
+            if let values = try? decodeIfPresent([String].self, forKey: key) {
+                let cleaned = values.compactMap(\.nilIfBlank)
+                if !cleaned.isEmpty {
+                    return cleaned
+                }
+            }
+            if let value = try? decodeIfPresent(String.self, forKey: key)?.nilIfBlank {
+                return [value]
+            }
+        }
+        return nil
+    }
+
+    func decodeIntIfPresent(forKeys keys: [Key]) throws -> Int? {
+        for key in keys {
+            if let value = try? decodeIfPresent(Int.self, forKey: key) {
+                return value
+            }
+            if let value = try? decodeIfPresent(Double.self, forKey: key) {
+                return Int(value)
+            }
+            if let value = try? decodeIfPresent(String.self, forKey: key), let intValue = Int(value) {
+                return intValue
+            }
+        }
+        return nil
+    }
+
+    func decodeIfPresent<T: Decodable>(_ type: T.Type, forKeys keys: [Key]) throws -> T? {
+        for key in keys {
+            if let value = try decodeIfPresent(type, forKey: key) {
+                return value
+            }
+        }
+        return nil
     }
 }
 

@@ -8,35 +8,21 @@ struct SubjectView: View {
         ZStack {
             QiheColor.paper.ignoresSafeArea()
 
-            if let payload = historyStore.record(id: recordId)?.reviewPayload {
+            if let result = historyStore.record(id: recordId)?.reviewPayload?.result {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         QiheSectionHeader(
-                            title: "主体信息",
-                            subtitle: payload.attachment?.filename ?? payload.result.displayTitle
+                            title: "识别信息",
+                            subtitle: "展示甲方、乙方、金额、期限等合同要素。识别不到时使用空状态。"
                         )
 
-                        PaperCard {
-                            VStack(alignment: .leading, spacing: 14) {
-                                LabeledText(
-                                    label: "来源",
-                                    text: payload.result.source?.filename
-                                        ?? payload.attachment?.filename
-                                        ?? "文本输入"
-                                )
+                        SubjectFactsPanel(result: result)
 
-                                LabeledText(
-                                    label: "主体",
-                                    text: payload.result.parties?.displayString ?? "暂无主体信息。"
-                                )
-                            }
-                        }
-
-                        PaperCard {
+                        PaperCard(padding: 14) {
                             VStack(spacing: 12) {
                                 ProcessNode(
-                                    title: "仅展示审查结果",
-                                    detail: "主体信息来自合同审查返回内容，仅用于核对展示。",
+                                    title: "中文字段",
+                                    detail: "仅展示甲方、乙方、合同类型、金额、期限、司法辖区。",
                                     isDone: true
                                 )
                                 ProcessNode(
