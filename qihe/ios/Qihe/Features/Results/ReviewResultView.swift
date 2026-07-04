@@ -362,10 +362,14 @@ private struct SourceTextParagraph {
     let id: Int
     let text: String
     let normalizedText: String
+    let startOffset: Int?
+    let endOffset: Int?
 
-    init(id: Int, text: String) {
+    init(id: Int, text: String, startOffset: Int? = nil, endOffset: Int? = nil) {
         self.id = id
         self.text = text
+        self.startOffset = startOffset
+        self.endOffset = endOffset
         normalizedText = text.sourceMatchNormalized
     }
 }
@@ -527,9 +531,7 @@ private struct SourceRiskLevelPill: View {
 
 private enum SourceRiskLocator {
     static func annotate(result: ReviewResult) -> SourceRiskMap {
-        let paragraphs = splitSourceText(result.sourceText).enumerated().map { index, text in
-            SourceTextParagraph(id: index, text: text)
-        }
+        let paragraphs = sourceParagraphs(from: result.sourceText)
         var risksByParagraph: [Int: [RiskItem]] = [:]
         var unmatchedRisks: [RiskItem] = []
 
@@ -550,6 +552,19 @@ private enum SourceRiskLocator {
     }
 
     private static func matchedParagraphID(for risk: RiskItem, in paragraphs: [SourceTextParagraph]) -> Int? {
+        if let id = offsetParagraphID(for: risk, in: paragraphs) {
+            return id
+        }
+
+        if let id = uniqueParagraphID(
+            for: originalExcerptCandidates(from: risk),
+            in: paragraphs,
+            minimumLength: 8,
+            allowReverseContainment: true
+        ) {
+            return id
+        }
+
         if let id = uniqueParagraphID(for: clauseCandidates(from: risk), in: paragraphs, minimumLength: 3) {
             return id
         }
@@ -568,6 +583,59 @@ private enum SourceRiskLocator {
         }
 
         return uniqueParagraphID(for: longFieldCandidates(from: risk), in: paragraphs, minimumLength: 14)
+    }
+
+    private static func sourceParagraphs(from sourceText: String) -> [SourceTextParagraph] {
+        var searchStart = sourceText.startIndex
+
+        return splitSourceText(sourceText).enumerated().map { index, text in
+            let searchRange = searchStart..<sourceText.endIndex
+            guard let range = sourceText.range(of: text, options: [], range: searchRange) else {
+                return SourceTextParagraph(id: index, text: text)
+            }
+
+            searchStart = range.upperBound
+            return SourceTextParagraph(
+                id: index,
+                text: text,
+                startOffset: range.lowerBound.utf16Offset(in: sourceText),
+                endOffset: range.upperBound.utf16Offset(in: sourceText)
+            )
+        }
+    }
+
+    private static func offsetParagraphID(for risk: RiskItem, in paragraphs: [SourceTextParagraph]) -> Int? {
+        guard let startOffset = risk.startOffset,
+              let endOffset = risk.endOffset,
+              startOffset >= 0,
+              endOffset > startOffset else {
+            return nil
+        }
+
+        let scoredParagraphs = paragraphs.compactMap { paragraph -> (id: Int, overlap: Int)? in
+            guard let paragraphStart = paragraph.startOffset,
+                  let paragraphEnd = paragraph.endOffset,
+                  paragraphEnd > paragraphStart else {
+                return nil
+            }
+
+            let overlap = max(0, min(endOffset, paragraphEnd) - max(startOffset, paragraphStart))
+            guard overlap > 0 else {
+                return nil
+            }
+            return (paragraph.id, overlap)
+        }
+
+        guard !scoredParagraphs.isEmpty else {
+            return nil
+        }
+        if scoredParagraphs.count == 1 {
+            return scoredParagraphs[0].id
+        }
+
+        let maxOverlap = scoredParagraphs.map(\.overlap).max() ?? 0
+        let winners = scoredParagraphs.filter { $0.overlap == maxOverlap }
+        return winners.count == 1 ? winners[0].id : nil
     }
 
     private static func splitSourceText(_ text: String) -> [String] {
@@ -686,18 +754,36 @@ private enum SourceRiskLocator {
     }
 
     private static func clauseCandidates(from risk: RiskItem) -> [String] {
-        guard let clause = risk.clause?.nilIfBlank else {
+        var candidates: [String] = []
+
+        if let clauseTitle = risk.clauseTitle?.nilIfBlank {
+            candidates.append(clauseTitle)
+            candidates.append(contentsOf: clauseNumberCandidates(in: clauseTitle))
+        }
+
+        if let clauseId = risk.clauseId?.nilIfBlank {
+            candidates.append(contentsOf: clauseIDCandidates(from: clauseId))
+        }
+
+        if let clause = risk.clause?.nilIfBlank {
+            candidates.append(clause)
+            candidates.append(contentsOf: clauseNumberCandidates(in: clause))
+            candidates.append(contentsOf: regexCaptures(
+                in: clause,
+                pattern: #"(^|\s)([一二三四五六七八九十0-9]+[、.．])"#,
+                captureGroup: 2
+            ))
+        }
+
+        return candidates
+    }
+
+    private static func originalExcerptCandidates(from risk: RiskItem) -> [String] {
+        guard let originalExcerpt = risk.originalExcerpt?.nilIfBlank else {
             return []
         }
 
-        var candidates = [clause]
-        candidates.append(contentsOf: clauseNumberCandidates(in: clause))
-        candidates.append(contentsOf: regexCaptures(
-            in: clause,
-            pattern: #"(^|\s)([一二三四五六七八九十0-9]+[、.．])"#,
-            captureGroup: 2
-        ))
-        return candidates
+        return [originalExcerpt] + sentenceSnippets(in: originalExcerpt)
     }
 
     private static func originalTextCandidates(from risk: RiskItem) -> [String] {
@@ -761,6 +847,40 @@ private enum SourceRiskLocator {
             }
             return candidates
         }
+    }
+
+    private static func clauseIDCandidates(from text: String) -> [String] {
+        let cleaned = text.trimmedForInput
+        var candidates = clauseNumberCandidates(in: cleaned)
+
+        if let number = Int(cleaned), let chinese = chineseNumberText(for: number) {
+            candidates.append("第\(number)条")
+            candidates.append("第\(chinese)条")
+        } else if let number = chineseNumberValue(cleaned.sourceMatchNormalized) {
+            candidates.append("第\(number)条")
+            if let chinese = chineseNumberText(for: number) {
+                candidates.append("第\(chinese)条")
+            }
+        } else if cleaned.sourceMatchNormalized.count >= 3 {
+            candidates.append(cleaned)
+        }
+
+        let trailingNumbers = regexCaptures(
+            in: cleaned,
+            pattern: #"([0-9]+)$"#,
+            captureGroup: 1
+        )
+        for rawNumber in trailingNumbers {
+            guard let number = Int(rawNumber) else {
+                continue
+            }
+            candidates.append("第\(number)条")
+            if let chinese = chineseNumberText(for: number) {
+                candidates.append("第\(chinese)条")
+            }
+        }
+
+        return candidates
     }
 
     private static func regexCaptures(in text: String, pattern: String, captureGroup: Int) -> [String] {

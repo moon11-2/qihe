@@ -370,6 +370,7 @@ struct ReviewInputView: View {
             metadata["contract_type"] = .string(contractType)
         }
         if let userRole = userRole.nilIfBlank {
+            metadata["user_role"] = .string(userRole)
             metadata["role"] = .string(userRole)
         }
         if let focusAreas = focusAreas.nilIfBlank {
