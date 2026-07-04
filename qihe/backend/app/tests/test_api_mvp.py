@@ -4,6 +4,7 @@ from pathlib import Path
 from docx import Document
 from fastapi.testclient import TestClient
 from pypdf import PdfWriter
+from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
 from app.core.config import settings
 from app.main import create_app
@@ -13,6 +14,29 @@ from app.services.files import storage
 def _client(tmp_path: Path, monkeypatch) -> TestClient:
     monkeypatch.setattr(storage, "UPLOAD_DIR", tmp_path)
     return TestClient(create_app())
+
+
+def _pdf_with_text(text: str) -> bytes:
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=300, height=300)
+    font = DictionaryObject(
+        {
+            NameObject("/Type"): NameObject("/Font"),
+            NameObject("/Subtype"): NameObject("/Type1"),
+            NameObject("/BaseFont"): NameObject("/Helvetica"),
+        }
+    )
+    font_ref = writer._add_object(font)
+    page[NameObject("/Resources")] = DictionaryObject(
+        {NameObject("/Font"): DictionaryObject({NameObject("/F1"): font_ref})}
+    )
+    stream = DecodedStreamObject()
+    stream.set_data(f"BT /F1 12 Tf 50 250 Td ({text}) Tj ET".encode("ascii"))
+    page[NameObject("/Contents")] = writer._add_object(stream)
+
+    buffer = BytesIO()
+    writer.write(buffer)
+    return buffer.getvalue()
 
 
 def test_upload_supported_file_types(tmp_path: Path, monkeypatch) -> None:
@@ -43,16 +67,13 @@ def test_upload_supported_file_types(tmp_path: Path, monkeypatch) -> None:
     assert docx_response.status_code == 200
     assert "DOCX contract text" in docx_response.json()["text_preview"]
 
-    pdf_buffer = BytesIO()
-    writer = PdfWriter()
-    writer.add_blank_page(width=72, height=72)
-    writer.write(pdf_buffer)
     pdf_response = client.post(
         "/api/files/upload",
-        files={"file": ("contract.pdf", pdf_buffer.getvalue(), "application/pdf")},
+        files={"file": ("contract.pdf", _pdf_with_text("PDF contract text"), "application/pdf")},
     )
     assert pdf_response.status_code == 200
     assert pdf_response.json()["filename"] == "contract.pdf"
+    assert "PDF contract text" in pdf_response.json()["text_preview"]
 
 
 def test_upload_rejects_images_and_large_files(tmp_path: Path, monkeypatch) -> None:
@@ -72,6 +93,18 @@ def test_upload_rejects_images_and_large_files(tmp_path: Path, monkeypatch) -> N
     )
     assert large_response.status_code == 413
     assert large_response.json()["error"]["code"] == "file_too_large"
+
+
+def test_upload_rejects_empty_extracted_text(tmp_path: Path, monkeypatch) -> None:
+    client = _client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/files/upload",
+        files={"file": ("empty.txt", b"   \n\t", "text/plain")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "empty_file_text"
 
 
 def test_chat_response_shapes() -> None:

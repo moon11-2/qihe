@@ -47,6 +47,10 @@ async def upload_file(file: UploadFile = File(...)) -> FileUploadResponse:
             destination.unlink(missing_ok=True)
             raise api_error(400, "text_extraction_failed", "文件文本抽取失败，请确认文件可读取")
 
+        if not text.strip():
+            destination.unlink(missing_ok=True)
+            raise api_error(400, "empty_file_text", "文件未抽取到可审查文本，请上传包含文字的 PDF、DOCX 或 TXT 文件")
+
         preview = text[:240]
         stored_file = StoredFile(
             file_id=file_id,

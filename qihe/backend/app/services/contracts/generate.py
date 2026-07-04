@@ -46,20 +46,27 @@ async def run_generate(request: ContractRunRequest, provider: LLMProvider | None
     except Exception:
         return build_generate_fallback(source, request=request, requirement_text=text)
 
-    return normalize_generate_result(data, source)
+    return normalize_generate_result(data, source, request=request, requirement_text=text)
 
 
-def normalize_generate_result(data: dict[str, Any], source: ContractSource) -> GenerateResult:
+def normalize_generate_result(
+    data: dict[str, Any],
+    source: ContractSource,
+    request: ContractRunRequest | None = None,
+    requirement_text: str = "",
+) -> GenerateResult:
     notes = safe_string_list(data.get("notes"))
     if not any(GENERATE_DISCLAIMER in note for note in notes):
         notes.insert(0, GENERATE_DISCLAIMER)
 
-    missing_fields = safe_string_list(data.get("missing_fields"))
+    known_fields = _known_generate_fields(request.metadata if request else {}, requirement_text)
+    missing_fields = _remove_known_missing_fields(safe_string_list(data.get("missing_fields")), known_fields)
     checklist = safe_string_list(data.get("pre_sign_checklist")) or DEFAULT_CHECKLIST
+    draft = text_or_default(safe_output_text(data.get("draft")), _fallback_draft(missing_fields))
 
     return GenerateResult(
         title=safe_output_text(text_or_default(data.get("title"), "合同草案")),
-        draft=text_or_default(safe_output_text(data.get("draft")), _fallback_draft(missing_fields)),
+        draft=_complete_draft_with_known_fields(draft, known_fields),
         missing_fields=missing_fields,
         pre_sign_checklist=checklist,
         notes=notes,
@@ -147,6 +154,64 @@ def _infer_generate_fields(requirement_text: str) -> dict[str, str]:
         "term": _first_match(requirement_text, r"(?:期限|履行期限)\s*(?:为|是|:|：)?\s*([^，,。；;\n]{1,30})"),
         "jurisdiction": _first_match(requirement_text, r"(?:争议解决|管辖)\s*(?:为|是|:|：)?\s*([^，,。；;\n]{1,40})"),
     }
+
+
+def _known_generate_fields(metadata: dict[str, Any], requirement_text: str) -> dict[str, str]:
+    inferred = _infer_generate_fields(requirement_text)
+    return {
+        "合同类型": _field(metadata, "contract_type", "合同类型") or inferred["contract_type"],
+        "甲方全称": _field(metadata, "party_a", "甲方", "甲方全称") or inferred["party_a"],
+        "乙方全称": _field(metadata, "party_b", "乙方", "乙方全称") or inferred["party_b"],
+        "合同金额": _field(metadata, "amount", "金额", "合同金额", "价款") or inferred["amount"],
+        "履行期限": _field(metadata, "term", "期限", "履行期限") or inferred["term"],
+        "争议解决方式": _field(metadata, "jurisdiction", "争议解决方式", "管辖") or inferred["jurisdiction"],
+    }
+
+
+def _remove_known_missing_fields(missing_fields: list[str], known_fields: dict[str, str]) -> list[str]:
+    known_aliases = {
+        "合同类型": ("合同类型",),
+        "甲方全称": ("甲方", "甲方全称"),
+        "乙方全称": ("乙方", "乙方全称"),
+        "合同金额": ("金额", "合同金额", "价款"),
+        "履行期限": ("期限", "履行期限"),
+        "争议解决方式": ("争议解决", "争议解决方式", "管辖"),
+    }
+    filtered: list[str] = []
+    for field in missing_fields:
+        should_keep = True
+        for label, aliases in known_aliases.items():
+            if known_fields.get(label) and any(alias in field for alias in aliases):
+                should_keep = False
+                break
+        if should_keep:
+            filtered.append(field)
+    return filtered
+
+
+def _complete_draft_with_known_fields(draft: str, known_fields: dict[str, str]) -> str:
+    replacements = {
+        "甲方全称": ("【待补充：甲方全称】", "【待补充：甲方】"),
+        "乙方全称": ("【待补充：乙方全称】", "【待补充：乙方】"),
+        "合同金额": ("【待补充：合同金额】", "【待补充：金额】", "【待补充：价款】"),
+        "履行期限": ("【待补充：履行期限】", "【待补充：期限】"),
+        "争议解决方式": ("【待补充：争议解决方式】", "【待补充：管辖】"),
+    }
+    completed = draft
+    for label, placeholders in replacements.items():
+        value = known_fields.get(label)
+        if not value:
+            continue
+        for placeholder in placeholders:
+            completed = completed.replace(placeholder, value)
+
+    confirmations = []
+    for label, value in known_fields.items():
+        if value and value not in completed:
+            confirmations.append(f"{label}：{value}")
+    if confirmations:
+        completed = f"{completed.rstrip()}\n\n关键变量确认\n" + "\n".join(confirmations)
+    return completed
 
 
 def _first_match(text: str, pattern: str) -> str:
