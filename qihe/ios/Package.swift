@@ -14,7 +14,8 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "Qihe",
-            path: "Qihe"
+            path: "Qihe",
+            exclude: ["Resources"]
         )
     ]
 )

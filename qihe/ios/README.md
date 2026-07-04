@@ -1,6 +1,6 @@
 # 契合 iOS
 
-SwiftUI iPhone App 源码骨架。
+SwiftUI iPhone App 工程。
 
 当前阶段先建立模块边界：
 
@@ -14,7 +14,11 @@ Qihe/
   Resources/
 ```
 
-后续建议用 Xcode 创建 iOS App 工程后，把该源码目录纳入 target，最低系统版本设为 iOS 17。
+当前已提供 `Qihe.xcodeproj`，可以直接用 Xcode 打开：
+
+```bash
+open qihe/ios/Qihe.xcodeproj
+```
 
 ## 构建入口
 
@@ -25,7 +29,21 @@ cd qihe/ios
 swift build
 ```
 
-真机或模拟器发布仍建议用 Xcode 创建 iOS App 工程，并把 `Qihe/` 源码目录纳入 target。
+正式 iOS App target 构建：
+
+```bash
+cd qihe/ios
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
+  -project Qihe.xcodeproj \
+  -scheme Qihe \
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.4' \
+  -derivedDataPath /tmp/qihe-AppDerivedData \
+  build
+```
+
+使用 `/tmp/qihe-AppDerivedData` 是为了避免某些同步目录里的扩展属性影响 iOS 签名。
+
+如果仓库位于 Documents、iCloud Drive 或其他同步目录，并且 `xcodebuild` 卡在项目读取阶段，可先把 iOS 工程复制到 `/tmp` 或把仓库迁到非同步目录后再构建。
 
 ## 后端地址
 
