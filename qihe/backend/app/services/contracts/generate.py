@@ -6,6 +6,8 @@ from app.models.contracts import ContractRunRequest, ContractSource, GenerateRes
 from app.services.contracts.common import (
     append_once,
     load_prompt,
+    metadata_text,
+    pick_metadata,
     resolve_contract_input,
     safe_output_text,
     safe_string_list,
@@ -22,10 +24,19 @@ DEFAULT_CHECKLIST = [
     "核对违约责任、解除条件和通知方式",
     "核对争议解决方式、司法辖区和签署日期",
 ]
+GENERATE_METADATA_LABELS = {
+    "contract_type": "合同类型",
+    "user_role": "用户角色",
+    "my_identity": "我的身份",
+    "special_terms": "特殊约定",
+}
+GENERATE_METADATA_KEYS = ("contract_type", "user_role", "my_identity", "special_terms")
+INVALID_METADATA_VALUES = {"无", "null", "none", "None", "不确定", "未知", "未填写", "无特殊约定"}
 
 
 async def run_generate(request: ContractRunRequest, provider: LLMProvider | None = None) -> GenerateResult:
     text, source = resolve_contract_input(request)
+    generate_metadata = pick_metadata(request.metadata, GENERATE_METADATA_KEYS)
     if not text:
         return build_generate_fallback(source, request=request, requirement_text=text)
 
@@ -36,7 +47,8 @@ async def run_generate(request: ContractRunRequest, provider: LLMProvider | None
             "role": "user",
             "content": (
                 "请根据以下需求起草合同，并按指定 JSON schema 输出。\n\n"
-                f"补充元数据：{json.dumps(request.metadata, ensure_ascii=False)}\n\n"
+                f"结构化起草条件 JSON：{json.dumps(generate_metadata, ensure_ascii=False)}\n"
+                f"结构化起草条件说明：\n{metadata_text(generate_metadata, GENERATE_METADATA_LABELS) or '无'}\n\n"
                 f"用户需求：\n{text}"
             ),
         },
@@ -62,10 +74,16 @@ def normalize_generate_result(
     known_fields = _known_generate_fields(request.metadata if request else {}, requirement_text)
     missing_fields = _remove_known_missing_fields(safe_string_list(data.get("missing_fields")), known_fields)
     checklist = safe_string_list(data.get("pre_sign_checklist")) or DEFAULT_CHECKLIST
+    checklist = _complete_checklist(checklist, known_fields)
     draft = text_or_default(safe_output_text(data.get("draft")), _fallback_draft(missing_fields))
+    title = _complete_title(
+        safe_output_text(text_or_default(data.get("title"), "合同草案")),
+        known_fields,
+    )
+    notes = _complete_notes(notes, known_fields)
 
     return GenerateResult(
-        title=safe_output_text(text_or_default(data.get("title"), "合同草案")),
+        title=title,
         draft=_complete_draft_with_known_fields(draft, known_fields),
         missing_fields=missing_fields,
         pre_sign_checklist=checklist,
@@ -86,7 +104,10 @@ def build_generate_fallback(
     party_b = _field(metadata, "party_b", "乙方", "乙方全称") or inferred["party_b"]
     amount = _field(metadata, "amount", "金额", "合同金额", "价款") or inferred["amount"]
     term = _field(metadata, "term", "期限", "履行期限") or inferred["term"]
-    key_terms = _field(metadata, "key_terms", "交付或服务内容", "服务内容") or requirement_text
+    user_identity = _field(metadata, "my_identity", "我的身份")
+    user_role = _field(metadata, "user_role", "用户角色")
+    special_terms = _field(metadata, "special_terms", "特殊约定")
+    key_terms = _field(metadata, "key_terms", "交付或服务内容", "服务内容") or special_terms or requirement_text
     jurisdiction = _field(metadata, "jurisdiction", "争议解决方式", "管辖") or inferred["jurisdiction"]
 
     missing_fields = _missing_fields(
@@ -107,6 +128,8 @@ def build_generate_fallback(
         amount=amount,
         term=term,
         key_terms=key_terms,
+        user_identity=user_identity,
+        special_terms=special_terms,
         jurisdiction=jurisdiction,
         missing_fields=missing_fields,
     )
@@ -115,16 +138,27 @@ def build_generate_fallback(
         title=f"{contract_type or '合同'}草案",
         draft=draft,
         missing_fields=missing_fields,
-        pre_sign_checklist=DEFAULT_CHECKLIST,
-        notes=[GENERATE_DISCLAIMER, "当前信息不足或 AI 输出未能稳定解析，已返回可继续补充的合同草案框架。"],
+        pre_sign_checklist=_complete_checklist(DEFAULT_CHECKLIST, {"用户身份": user_identity, "特殊约定": special_terms, "合同类型": contract_type}),
+        notes=_complete_notes(
+            [GENERATE_DISCLAIMER, "当前信息不足或 AI 输出未能稳定解析，已返回可继续补充的合同草案框架。"],
+            {
+                "用户身份": user_identity,
+                "用户角色": user_role,
+                "特殊约定": special_terms,
+            },
+        ),
         source=source,
     )
 
 
 def _field(metadata: dict[str, Any], *keys: str) -> str:
     for key in keys:
-        value = str(metadata.get(key) or "").strip()
-        if value:
+        raw_value = metadata.get(key)
+        if isinstance(raw_value, list):
+            value = "；".join(str(item).strip() for item in raw_value if str(item).strip())
+        else:
+            value = str(raw_value or "").strip()
+        if value and value not in INVALID_METADATA_VALUES and value.lower() not in INVALID_METADATA_VALUES:
             return value
     return ""
 
@@ -165,6 +199,9 @@ def _known_generate_fields(metadata: dict[str, Any], requirement_text: str) -> d
         "合同金额": _field(metadata, "amount", "金额", "合同金额", "价款") or inferred["amount"],
         "履行期限": _field(metadata, "term", "期限", "履行期限") or inferred["term"],
         "争议解决方式": _field(metadata, "jurisdiction", "争议解决方式", "管辖") or inferred["jurisdiction"],
+        "用户身份": _field(metadata, "my_identity", "我的身份"),
+        "用户角色": _field(metadata, "user_role", "用户角色"),
+        "特殊约定": _field(metadata, "special_terms", "特殊约定"),
     }
 
 
@@ -176,6 +213,7 @@ def _remove_known_missing_fields(missing_fields: list[str], known_fields: dict[s
         "合同金额": ("金额", "合同金额", "价款"),
         "履行期限": ("期限", "履行期限"),
         "争议解决方式": ("争议解决", "争议解决方式", "管辖"),
+        "特殊约定": ("特殊约定", "特别约定"),
     }
     filtered: list[str] = []
     for field in missing_fields:
@@ -214,6 +252,41 @@ def _complete_draft_with_known_fields(draft: str, known_fields: dict[str, str]) 
     return completed
 
 
+def _complete_title(title: str, known_fields: dict[str, str]) -> str:
+    contract_type = known_fields.get("合同类型")
+    if contract_type and contract_type not in title and title in {"合同草案", "合同", "协议草案"}:
+        return f"{contract_type}草案"
+    return title
+
+
+def _complete_notes(notes: list[str], known_fields: dict[str, str]) -> list[str]:
+    completed = list(notes)
+    user_identity = known_fields.get("用户身份")
+    if user_identity and not any(user_identity in note for note in completed):
+        completed.append(f"已按用户身份/立场关注：{user_identity}。")
+    user_role = known_fields.get("用户角色")
+    if user_role and not any(user_role in note for note in completed):
+        completed.append(f"已按用户角色调整说明颗粒度：{user_role}。")
+    special_terms = known_fields.get("特殊约定")
+    if special_terms and not any(special_terms in note for note in completed):
+        completed.append("已将特殊约定纳入草案或关键变量确认。")
+    return completed
+
+
+def _complete_checklist(checklist: list[str], known_fields: dict[str, str]) -> list[str]:
+    completed = list(checklist)
+    contract_type = known_fields.get("合同类型")
+    if contract_type and not any(contract_type in item for item in completed):
+        completed.append(f"核对{contract_type}的行业惯例、标的范围和履行条件")
+    user_identity = known_fields.get("用户身份")
+    if user_identity and not any(user_identity in item for item in completed):
+        completed.append(f"从{user_identity}立场复核权利义务、违约责任和解除条件")
+    special_terms = known_fields.get("特殊约定")
+    if special_terms and not any("特殊约定" in item for item in completed):
+        completed.append("逐条核对特殊约定的触发条件、履行期限和违约后果")
+    return completed
+
+
 def _first_match(text: str, pattern: str) -> str:
     match = re.search(pattern, text)
     if not match:
@@ -233,33 +306,39 @@ def _metadata_draft(
     amount: str,
     term: str,
     key_terms: str,
+    user_identity: str,
+    special_terms: str,
     jurisdiction: str,
     missing_fields: list[str],
 ) -> str:
-    if not any((contract_type, party_a, party_b, amount, term, key_terms, jurisdiction)):
+    if not any((contract_type, party_a, party_b, amount, term, key_terms, user_identity, special_terms, jurisdiction)):
         return _fallback_draft(missing_fields)
 
     return append_once(
         "\n\n".join(
-            [
+            part
+            for part in [
                 contract_type or "合同草案",
                 f"甲方：{party_a or '【待补充：甲方全称】'}",
                 f"乙方：{party_b or '【待补充：乙方全称】'}",
+                f"起草关注：{user_identity}" if user_identity else "",
                 "第一条 合同目的\n"
                 f"双方就{key_terms or '【待补充：交付或服务内容】'}达成本合同。",
-                "第二条 合同价款与支付\n"
+                f"第二条 特殊约定\n{special_terms}" if special_terms else "",
+                "第三条 合同价款与支付\n"
                 f"合同金额为{amount or '【待补充：合同金额】'}，付款方式和节点由双方另行确认。",
-                "第三条 履行期限\n"
+                "第四条 履行期限\n"
                 f"履行期限为{term or '【待补充：履行期限】'}。",
-                "第四条 交付与验收\n"
+                "第五条 交付与验收\n"
                 "乙方应按照双方确认的范围、标准和期限完成交付，甲方应及时验收并反馈。",
-                "第五条 违约责任\n"
+                "第六条 违约责任\n"
                 "任一方违反本合同约定，应继续履行、采取补救措施，并赔偿守约方合理损失。",
-                "第六条 争议解决\n"
+                "第七条 争议解决\n"
                 f"因本合同产生的争议，双方应先友好协商；协商不成的，按{jurisdiction or '【待补充：争议解决方式】'}处理。",
-                "第七条 签署\n本合同经双方授权代表签字或盖章后生效。",
+                "第八条 签署\n本合同经双方授权代表签字或盖章后生效。",
             ]
-        ),
+            if part
+        ).replace("\n\n\n", "\n\n"),
         GENERATE_DISCLAIMER,
     )
 

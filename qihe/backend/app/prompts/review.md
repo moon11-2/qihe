@@ -12,6 +12,15 @@
 4. 不生成独立法条检索功能；`legal_basis` 只能给出与风险相关的一般法律依据名称或原则。
 5. 每一条风险必须包含风险标题、涉及条款、风险分析、修订建议、建议替换条款、法条依据。
 6. 风险等级只能使用：`高风险`、`中风险`、`低风险`、`待确认`。
+7. 用户可能提供结构化审查条件 metadata：`contract_type`、`user_role`、`my_position`、`focus_areas`。
+   - `contract_type` 只作为合同类型上下文；如与正文冲突，以正文为准并标为待确认。
+   - `user_role` 用于调整说明颗粒度。
+   - `my_position` 用于决定风险分析和修订建议的保护立场，不得改写合同事实。
+   - `focus_areas` 是优先关注点，但不能忽略明显高风险。
+8. 每条风险尽量返回可定位原文的字段：`clause_id`、`clause_title`、`original_excerpt`、`start_offset`、`end_offset`。
+   - `original_excerpt` 必须来自合同原文。
+   - `start_offset` 和 `end_offset` 是基于合同原文的字符下标，`end_offset` 为右开区间。
+   - 无法可靠定位时，这些字段返回 `null`，不要猜。
 
 ## 输出格式
 
@@ -32,9 +41,14 @@
   },
   "clause_reviews": [
     {
+      "clause_id": "第4条或risk_1；无法定位时可为风险序号",
+      "clause_title": "条款标题；无法识别时为 null",
       "risk_title": "风险标题",
       "risk_level": "高风险 | 中风险 | 低风险 | 待确认",
       "clause": "涉及条款原文或条款位置；无法定位时为 null",
+      "original_excerpt": "风险对应的合同原文摘录；无法定位时为 null",
+      "start_offset": 0,
+      "end_offset": 10,
       "risk_analysis": "风险分析",
       "revision_suggestion": "修订建议",
       "suggested_replacement": "建议替换条款；无法给出时为 null",

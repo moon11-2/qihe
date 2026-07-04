@@ -28,9 +28,14 @@ class ContractParties(BaseModel):
 
 
 class ClauseReview(BaseModel):
+    clause_id: str | None = None
+    clause_title: str | None = None
     risk_title: str
     risk_level: RiskLevel
     clause: str | None = None
+    original_excerpt: str | None = None
+    start_offset: int | None = None
+    end_offset: int | None = None
     risk_analysis: str
     revision_suggestion: str
     suggested_replacement: str | None = None

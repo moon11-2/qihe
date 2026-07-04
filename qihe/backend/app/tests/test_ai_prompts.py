@@ -66,6 +66,10 @@ def test_review_rental_contract_shape(monkeypatch) -> None:
     assert result["parties"]["amount"] == "每月 5000元"
     assert result["parties"]["jurisdiction"] is None
     assert result["clause_reviews"][0]["risk_title"] == "押金退还条件不清"
+    assert result["clause_reviews"][0]["clause_id"] == "risk_1"
+    assert result["clause_reviews"][0]["original_excerpt"] == "押金一个月，退租后退还。"
+    assert result["clause_reviews"][0]["start_offset"] is not None
+    assert result["clause_reviews"][0]["end_offset"] is not None
     assert "legal_basis" in result["clause_reviews"][0]
 
 
@@ -128,3 +132,17 @@ def test_parse_json_object_repairs_markdown_wrapper() -> None:
 ```"""
 
     assert parse_json_object(raw)["intent"] == "chat"
+
+
+def test_prompts_describe_metadata_and_review_anchor_fields() -> None:
+    review_prompt = open("app/prompts/review.md", encoding="utf-8").read()
+    generate_prompt = open("app/prompts/generate.md", encoding="utf-8").read()
+    intent_prompt = open("app/prompts/intent.md", encoding="utf-8").read()
+
+    for field in ("clause_id", "clause_title", "original_excerpt", "start_offset", "end_offset"):
+        assert field in review_prompt
+    for field in ("contract_type", "user_role", "my_position", "focus_areas"):
+        assert field in review_prompt
+    for field in ("contract_type", "user_role", "my_identity", "special_terms"):
+        assert field in generate_prompt
+    assert "合同知识咨询" in intent_prompt
