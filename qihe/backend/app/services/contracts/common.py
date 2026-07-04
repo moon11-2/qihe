@@ -53,6 +53,48 @@ def resolve_contract_input(request: ContractRunRequest) -> tuple[str, ContractSo
     return "", ContractSource(text_preview="", file_id=None, char_count=0)
 
 
+def clean_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    cleaned: dict[str, Any] = {}
+    for key, value in metadata.items():
+        if value is None:
+            continue
+        if isinstance(value, str):
+            text = value.strip()
+            if text:
+                cleaned[key] = text
+            continue
+        if isinstance(value, list):
+            values = [str(item).strip() for item in value if str(item).strip()]
+            if values:
+                cleaned[key] = values
+            continue
+        if isinstance(value, dict):
+            nested = clean_metadata(value)
+            if nested:
+                cleaned[key] = nested
+            continue
+        cleaned[key] = value
+    return cleaned
+
+
+def pick_metadata(metadata: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
+    cleaned = clean_metadata(metadata)
+    return {key: cleaned[key] for key in keys if key in cleaned}
+
+
+def metadata_text(metadata: dict[str, Any], labels: dict[str, str] | None = None) -> str:
+    cleaned = clean_metadata(metadata)
+    lines: list[str] = []
+    for key, value in cleaned.items():
+        label = labels.get(key, key) if labels else key
+        if isinstance(value, list):
+            rendered = "、".join(str(item) for item in value)
+        else:
+            rendered = str(value)
+        lines.append(f"{label}: {rendered}")
+    return "\n".join(lines)
+
+
 def text_or_none(value: Any) -> str | None:
     if value is None:
         return None

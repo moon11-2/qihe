@@ -7,9 +7,30 @@ from app.services.llm.base import LLMProvider
 from app.services.llm.qwen import create_qwen_provider
 
 PROMPT_DIR = Path(__file__).resolve().parents[1] / "prompts"
-REVIEW_KEYWORDS = ("审查", "审核", "风险", "条款", "看合同", "看看合同", "有没有问题", "合同体检")
-GENERATE_KEYWORDS = ("生成", "起草", "拟一份", "写一份", "合同模板", "草案", "帮我写")
-CONTRACT_KEYWORDS = ("合同", "协议", "条款")
+REVIEW_KEYWORDS = (
+    "审查",
+    "审核",
+    "检查",
+    "评估",
+    "审一审",
+    "审一下",
+    "把关",
+    "过一遍",
+    "找问题",
+    "找风险",
+    "有没有坑",
+    "有没有问题",
+    "能不能签",
+    "是否可以签",
+    "是否合法",
+    "是否有效",
+    "合同体检",
+)
+GENERATE_KEYWORDS = ("生成", "起草", "拟", "拟一份", "拟定", "草拟", "写", "写一份", "帮我写", "做一份", "做个", "出一份", "给我一份", "模板", "草案")
+CONTRACT_OBJECT_KEYWORDS = ("合同", "协议", "条款", "文件", "正文", "NDA", "租房", "租赁", "劳动", "买卖", "服务", "委托", "保密", "借款", "担保", "合作")
+REVIEW_ACTION_KEYWORDS = ("看", "看看", "看下", "过一遍", "把关", "有没有坑", "有没有问题", "检查", "评估", "审一审", "审一下")
+CONSULTATION_KEYWORDS = ("什么是", "什么意思", "怎么理解", "流程", "需要哪些信息", "注意事项", "常见风险", "有哪些", "如何准备", "是什么", "怎么做")
+CONCRETE_DOCUMENT_KEYWORDS = ("这份", "这个", "我的", "以下", "上述", "附件", "已上传", "粘贴", "全文", "原文", "发给你")
 
 
 @lru_cache
@@ -89,9 +110,20 @@ def _normalize_intent_response(data: dict[str, Any]) -> ChatResponse:
 
 
 def _keyword_intent_response(text: str) -> ChatResponse:
-    has_review = any(keyword in text for keyword in REVIEW_KEYWORDS)
-    has_generate = any(keyword in text for keyword in GENERATE_KEYWORDS)
-    has_contract = any(keyword in text for keyword in CONTRACT_KEYWORDS)
+    has_contract_object = any(keyword in text for keyword in CONTRACT_OBJECT_KEYWORDS)
+    is_consultation = has_contract_object and any(keyword in text for keyword in CONSULTATION_KEYWORDS)
+    has_concrete_document = any(keyword in text for keyword in CONCRETE_DOCUMENT_KEYWORDS)
+    if is_consultation and not has_concrete_document:
+        return ChatResponse(
+            type="chat",
+            intent="chat",
+            reply="我可以先解释合同相关概念或流程；如果你要审查或起草，也可以直接告诉我。",
+        )
+
+    has_review = any(keyword in text for keyword in REVIEW_KEYWORDS) or (
+        has_contract_object and any(keyword in text for keyword in REVIEW_ACTION_KEYWORDS)
+    )
+    has_generate = any(keyword in text for keyword in GENERATE_KEYWORDS) and has_contract_object
 
     if has_review and not has_generate:
         return ChatResponse(
@@ -109,7 +141,7 @@ def _keyword_intent_response(text: str) -> ChatResponse:
         )
     if has_review and has_generate:
         return _need_input_response("你是想审查已有合同，还是生成新的合同草案？")
-    if has_contract:
+    if has_contract_object:
         return _need_input_response("你想让我审查已有合同，还是帮你生成合同草案？")
 
     return ChatResponse(

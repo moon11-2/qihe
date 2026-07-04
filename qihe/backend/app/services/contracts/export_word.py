@@ -46,7 +46,7 @@ def _add_review(document: Document, payload: dict[str, Any]) -> None:
         for key, value in parties.items():
             document.add_paragraph(f"{key}：{value}")
 
-    risk_items = review.get("risk_items") or review.get("clause_reviews") or []
+    risk_items = _review_items(review)
     document.add_heading("风险项", level=2)
     if not risk_items:
         document.add_paragraph("未发现明显风险项。")
@@ -60,6 +60,13 @@ def _add_review(document: Document, payload: dict[str, Any]) -> None:
             document.add_paragraph(str(description))
         if item.get("clause"):
             document.add_paragraph(f"涉及条款：{item['clause']}")
+        original_excerpt = _item_value(item, "original_excerpt", "excerpt")
+        if original_excerpt:
+            document.add_paragraph(f"原文摘录：{_truncate(str(original_excerpt), 500)}")
+        start_offset = item.get("start_offset")
+        end_offset = item.get("end_offset")
+        if start_offset is not None and end_offset is not None:
+            document.add_paragraph(f"原文位置：{start_offset}-{end_offset}")
         suggestion = _item_value(item, "revision_suggestion", "suggestion")
         if suggestion:
             document.add_paragraph(f"修订建议：{suggestion}")
@@ -104,3 +111,19 @@ def _item_value(item: dict[str, Any], *keys: str) -> Any:
         if item.get(key):
             return item[key]
     return None
+
+
+def _review_items(review: dict[str, Any]) -> list[dict[str, Any]]:
+    clause_reviews = review.get("clause_reviews")
+    if isinstance(clause_reviews, list) and clause_reviews:
+        return clause_reviews
+    risk_items = review.get("risk_items")
+    if isinstance(risk_items, list):
+        return risk_items
+    return []
+
+
+def _truncate(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}..."

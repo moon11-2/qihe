@@ -11,6 +11,14 @@ from app.main import create_app
 from app.services.files import storage
 
 
+class FailingProvider:
+    async def chat_json(self, messages: list[dict[str, str]], schema_name: str) -> dict:
+        raise RuntimeError("force keyword fallback")
+
+    async def chat(self, messages: list[dict[str, str]]) -> str:
+        raise RuntimeError("force chat fallback")
+
+
 def _client(tmp_path: Path, monkeypatch) -> TestClient:
     monkeypatch.setattr(storage, "UPLOAD_DIR", tmp_path)
     return TestClient(create_app())
@@ -107,16 +115,47 @@ def test_upload_rejects_empty_extracted_text(tmp_path: Path, monkeypatch) -> Non
     assert response.json()["error"]["code"] == "empty_file_text"
 
 
-def test_chat_response_shapes() -> None:
+def test_chat_response_shapes(monkeypatch) -> None:
+    monkeypatch.setattr("app.services.chat.create_qwen_provider", lambda: FailingProvider())
     client = TestClient(create_app())
 
-    route_response = client.post(
+    review_cases = [
+        "帮我审查这份合同风险",
+        "帮我看下这个合同",
+        "帮我把这个协议过一遍",
+        "帮我把关这份条款",
+    ]
+    for text in review_cases:
+        route_response = client.post(
+            "/api/chat",
+            json={"messages": [{"role": "user", "content": text}]},
+        )
+        assert route_response.status_code == 200
+        assert route_response.json()["type"] == "route"
+        assert route_response.json()["route"] == "review"
+
+    generate_response = client.post(
         "/api/chat",
-        json={"messages": [{"role": "user", "content": "帮我审查这份合同风险"}]},
+        json={"messages": [{"role": "user", "content": "帮我写一份租房合同"}]},
     )
-    assert route_response.status_code == 200
-    assert route_response.json()["type"] == "route"
-    assert route_response.json()["route"] == "review"
+    assert generate_response.status_code == 200
+    assert generate_response.json()["type"] == "route"
+    assert generate_response.json()["route"] == "generate"
+
+    mixed_response = client.post(
+        "/api/chat",
+        json={"messages": [{"role": "user", "content": "我不确定，是看合同还是写合同"}]},
+    )
+    assert mixed_response.status_code == 200
+    assert mixed_response.json()["type"] == "need_input"
+    assert mixed_response.json()["options"] == ["review", "generate"]
+
+    consult_response = client.post(
+        "/api/chat",
+        json={"messages": [{"role": "user", "content": "合同审查流程是什么"}]},
+    )
+    assert consult_response.status_code == 200
+    assert consult_response.json()["type"] == "chat"
 
     need_input_response = client.post(
         "/api/chat",
@@ -151,6 +190,9 @@ def test_contract_run_review_and_generate_shapes() -> None:
     assert isinstance(review_json["review_result"]["risk_items"], list)
     assert review_json["review_result"]["parties"]["party_a"] == "甲公司"
     assert review_json["review_result"]["parties"]["party_b"] == "乙公司"
+    first_review = review_json["review_result"]["clause_reviews"][0]
+    for key in ("clause_id", "clause_title", "original_excerpt", "start_offset", "end_offset"):
+        assert key in first_review
 
     generate_response = client.post(
         "/api/contracts/run",
@@ -183,6 +225,34 @@ def test_contract_run_review_and_generate_shapes() -> None:
     text_only_generate_json = text_only_generate_response.json()
     assert "甲公司" in text_only_generate_json["generate_result"]["draft"]
     assert "10000元" in text_only_generate_json["generate_result"]["draft"]
+
+
+def test_contract_generate_uses_metadata_without_treating_empty_values_as_facts() -> None:
+    client = TestClient(create_app())
+    response = client.post(
+        "/api/contracts/run",
+        json={
+            "mode": "generate",
+            "text": "帮我起草一份协议",
+            "metadata": {
+                "contract_type": "租赁合同",
+                "user_role": "普通用户",
+                "my_identity": "承租方",
+                "special_terms": "押金在退租验收后7日内无息退还",
+                "amount": "",
+                "jurisdiction": "无",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    result = response.json()["generate_result"]
+    assert "租赁合同" in result["title"] or "租赁合同" in result["draft"]
+    assert "承租方" in result["draft"] or any("承租方" in note for note in result["notes"])
+    assert "押金在退租验收后7日内无息退还" in result["draft"]
+    assert "特殊约定" not in result["missing_fields"]
+    assert "合同金额" in result["missing_fields"]
+    assert any("特殊约定" in item for item in result["pre_sign_checklist"])
 
 
 def test_word_export_can_be_opened() -> None:
