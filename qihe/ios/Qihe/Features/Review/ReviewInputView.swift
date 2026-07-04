@@ -5,10 +5,17 @@ struct ReviewInputView: View {
     @EnvironmentObject private var historyStore: HistoryStore
     @State private var text: String
     @State private var extraInfo = ""
+    @State private var isAdditionalInfoExpanded = false
+    @State private var contractType = ""
+    @State private var userRole = ""
+    @State private var focusAreas = ""
+    @State private var hasMigratedExtraInfo = false
     @State private var attachment: UploadedFile?
     @State private var isFileImporterPresented = false
     @State private var isUploading = false
     @State private var isRunning = false
+    @State private var reviewTask: Task<Void, Never>?
+    @State private var activeReviewToken: UUID?
     @State private var errorMessage: String?
     @State private var lastImportedURL: URL?
 
@@ -38,27 +45,7 @@ struct ReviewInputView: View {
                         priorityNotice
                     }
 
-                    PaperCard(padding: 14) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text("更多信息")
-                                    .font(QiheFont.body(size: 14, weight: .semibold))
-                                    .foregroundStyle(QiheColor.ink)
-
-                                QiheStatusPill(
-                                    text: "可选",
-                                    color: QiheColor.muted,
-                                    background: QiheColor.paperDeep
-                                )
-                            }
-
-                            TextField("合同类型、我的立场、关注重点", text: $extraInfo, axis: .vertical)
-                                .font(QiheFont.body(size: 14))
-                                .foregroundStyle(QiheColor.inkSoft)
-                                .lineLimit(1...3)
-                                .disabled(isRunning)
-                        }
-                    }
+                    additionalInfoSection
 
                     PaperCard(padding: 14) {
                         VStack(spacing: 12) {
@@ -85,16 +72,7 @@ struct ReviewInputView: View {
                         }
                     }
 
-                    QihePrimaryButton(
-                        title: "开始审查",
-                        systemImage: "doc.text.magnifyingglass",
-                        isLoading: isRunning,
-                        isDisabled: !hasInput || isUploading
-                    ) {
-                        Task {
-                            await runReview()
-                        }
-                    }
+                    reviewActionArea
 
                     Text("AI 辅助审查，不构成法律意见")
                         .font(QiheFont.caption(size: 11))
@@ -123,6 +101,9 @@ struct ReviewInputView: View {
             allowedContentTypes: QiheDocumentValidator.allowedTypes
         ) { result in
             handleFileImport(result)
+        }
+        .onAppear {
+            migrateExtraInfoIfNeeded()
         }
     }
 
@@ -166,37 +147,172 @@ struct ReviewInputView: View {
         }
     }
 
+    @ViewBuilder
     private var uploadSlot: some View {
-        Button {
-            isFileImporterPresented = true
-        } label: {
-            VStack(spacing: 8) {
-                Image(systemName: attachment == nil ? "doc.badge.plus" : "doc.text")
-                    .font(.system(size: 28, weight: .semibold))
+        if let attachment {
+            VStack(spacing: 10) {
+                uploadSummary(
+                    systemImage: "doc.text",
+                    title: attachment.filename,
+                    detail: uploadDetail
+                )
+
+                HStack(spacing: 10) {
+                    Button {
+                        isFileImporterPresented = true
+                    } label: {
+                        Label("更换文件", systemImage: "arrow.triangle.2.circlepath")
+                            .font(QiheFont.body(size: 14, weight: .semibold))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 40)
+                    }
                     .foregroundStyle(QiheColor.navy)
+                    .background(QiheColor.navySoft)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .buttonStyle(.plain)
+                    .disabled(isUploading || isRunning)
 
-                Text(attachment?.filename ?? "上传 PDF / Word / TXT")
-                    .font(QiheFont.body(size: 14, weight: .semibold))
-                    .foregroundStyle(QiheColor.ink)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.78)
-
-                Text(uploadDetail)
-                    .font(QiheFont.caption(size: 12))
-                    .foregroundStyle(QiheColor.muted)
+                    Button {
+                        removeAttachment()
+                    } label: {
+                        Label("移除附件", systemImage: "trash")
+                            .font(QiheFont.body(size: 14, weight: .semibold))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 40)
+                    }
+                    .foregroundStyle(isUploading || isRunning ? QiheColor.muted : QiheColor.seal)
+                    .background(isUploading || isRunning ? QiheColor.line : QiheColor.sealSoft)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .buttonStyle(.plain)
+                    .disabled(isUploading || isRunning)
+                }
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 22)
-            .padding(.horizontal, 14)
-            .background(QiheColor.card.opacity(0.72))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(QiheColor.lineStrong, style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
-            )
+        } else {
+            Button {
+                isFileImporterPresented = true
+            } label: {
+                uploadSummary(
+                    systemImage: "doc.badge.plus",
+                    title: "上传 PDF / Word / TXT",
+                    detail: uploadDetail
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(isUploading || isRunning)
         }
-        .buttonStyle(.plain)
-        .disabled(isUploading || isRunning)
+    }
+
+    private func uploadSummary(systemImage: String, title: String, detail: String) -> some View {
+        VStack(spacing: 8) {
+            Image(systemName: systemImage)
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(QiheColor.navy)
+
+            Text(title)
+                .font(QiheFont.body(size: 14, weight: .semibold))
+                .foregroundStyle(QiheColor.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+
+            Text(detail)
+                .font(QiheFont.caption(size: 12))
+                .foregroundStyle(QiheColor.muted)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 22)
+        .padding(.horizontal, 14)
+        .background(QiheColor.card.opacity(0.72))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(QiheColor.lineStrong, style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
+        )
+    }
+
+    private var additionalInfoSection: some View {
+        PaperCard(padding: 14) {
+            DisclosureGroup(isExpanded: $isAdditionalInfoExpanded) {
+                VStack(spacing: 10) {
+                    metadataField(
+                        title: "合同类型",
+                        placeholder: "如：房屋租赁、服务、买卖",
+                        text: $contractType
+                    )
+                    metadataField(
+                        title: "我的立场",
+                        placeholder: "如：甲方、乙方、承租人",
+                        text: $userRole
+                    )
+                    metadataField(
+                        title: "关注重点",
+                        placeholder: "如：付款、违约责任、争议解决",
+                        text: $focusAreas,
+                        lineLimit: 1...3
+                    )
+                }
+                .padding(.top, 10)
+            } label: {
+                HStack(spacing: 8) {
+                    Text("更多信息")
+                        .font(QiheFont.body(size: 14, weight: .semibold))
+                        .foregroundStyle(QiheColor.ink)
+
+                    QiheStatusPill(
+                        text: "可选",
+                        color: QiheColor.muted,
+                        background: QiheColor.paperDeep
+                    )
+
+                    if hasReviewMetadata {
+                        QiheStatusPill(
+                            text: "已填写",
+                            color: QiheColor.navy,
+                            background: QiheColor.navySoft
+                        )
+                    }
+                }
+            }
+            .disabled(isRunning)
+        }
+    }
+
+    private func metadataField(
+        title: String,
+        placeholder: String,
+        text: Binding<String>,
+        lineLimit: ClosedRange<Int> = 1...1
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(QiheFont.caption(size: 12, weight: .semibold))
+                .foregroundStyle(QiheColor.muted)
+
+            TextField(placeholder, text: text, axis: .vertical)
+                .font(QiheFont.body(size: 14))
+                .foregroundStyle(QiheColor.inkSoft)
+                .lineLimit(lineLimit)
+                .padding(10)
+                .background(QiheColor.paper)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .disabled(isRunning)
+        }
+    }
+
+    @ViewBuilder
+    private var reviewActionArea: some View {
+        if isRunning {
+            QiheSecondaryButton(title: "取消", systemImage: "xmark.circle") {
+                cancelReview()
+            }
+        } else {
+            QihePrimaryButton(
+                title: "开始审查",
+                systemImage: "doc.text.magnifyingglass",
+                isDisabled: !hasInput || isUploading
+            ) {
+                startReview()
+            }
+        }
     }
 
     private var priorityNotice: some View {
@@ -235,15 +351,32 @@ struct ReviewInputView: View {
     }
 
     private var requestText: String {
-        let parts = [
-            text.trimmedForInput,
-            extraInfo.nilIfBlank.map { "补充信息：\($0)" } ?? ""
-        ].filter { !$0.isEmpty }
-        return parts.joined(separator: "\n\n")
+        text.trimmedForInput
     }
 
     private var requestFile: UploadedFile? {
         hasText ? nil : attachment
+    }
+
+    private var hasReviewMetadata: Bool {
+        contractType.nilIfBlank != nil
+            || userRole.nilIfBlank != nil
+            || focusAreas.nilIfBlank != nil
+    }
+
+    private var reviewMetadata: [String: JSONValue] {
+        var metadata: [String: JSONValue] = [:]
+        if let contractType = contractType.nilIfBlank {
+            metadata["contract_type"] = .string(contractType)
+        }
+        if let userRole = userRole.nilIfBlank {
+            metadata["user_role"] = .string(userRole)
+            metadata["role"] = .string(userRole)
+        }
+        if let focusAreas = focusAreas.nilIfBlank {
+            metadata["focus_areas"] = .string(focusAreas)
+        }
+        return metadata
     }
 
     private var hasInput: Bool {
@@ -284,32 +417,189 @@ struct ReviewInputView: View {
         }
     }
 
-    private func runReview() async {
-        guard hasInput else {
+    private func removeAttachment() {
+        attachment = nil
+        lastImportedURL = nil
+        errorMessage = nil
+    }
+
+    private func startReview() {
+        guard hasInput, !isRunning else {
             return
         }
+        migrateExtraInfoIfNeeded()
+        let token = UUID()
+        activeReviewToken = token
         isRunning = true
         errorMessage = nil
-        defer { isRunning = false }
+        let task = Task {
+            await runReview(token: token)
+        }
+        reviewTask = task
+    }
+
+    private func cancelReview() {
+        reviewTask?.cancel()
+        reviewTask = nil
+        activeReviewToken = nil
+        isRunning = false
+    }
+
+    private func runReview(token: UUID) async {
+        let currentRequestText = requestText
+        let currentRequestFile = requestFile
+        let currentAttachment = attachment
+        let currentMetadata = reviewMetadata
+
+        defer {
+            if activeReviewToken == token {
+                isRunning = false
+                reviewTask = nil
+                activeReviewToken = nil
+            }
+        }
 
         do {
-            var result = try await appState.apiClient.runReview(text: requestText, file: requestFile)
+            var result = try await runReviewRequest(
+                text: currentRequestText,
+                file: currentRequestFile,
+                metadata: currentMetadata
+            )
+            try Task.checkCancellation()
+            guard activeReviewToken == token else {
+                return
+            }
             let source = ContractSource(
-                textPreview: result.source?.textPreview ?? requestText.truncated(to: 240),
-                fileId: result.source?.fileId ?? requestFile?.fileId,
-                filename: result.source?.filename ?? requestFile?.filename,
-                originalText: result.source?.originalText ?? requestText.nilIfBlank
+                textPreview: result.source?.textPreview ?? currentRequestText.truncated(to: 240),
+                fileId: result.source?.fileId ?? currentRequestFile?.fileId,
+                filename: result.source?.filename ?? currentRequestFile?.filename,
+                originalText: result.source?.originalText ?? currentRequestText.nilIfBlank
             )
             result.source = source
             let id = historyStore.saveReview(
-                requestText: requestText,
-                attachment: attachment,
+                requestText: currentRequestText,
+                attachment: currentAttachment,
                 result: result
             )
             appState.path.append(.reviewResult(recordId: id))
         } catch {
+            guard activeReviewToken == token else {
+                return
+            }
+            if isCancellation(error) || Task.isCancelled {
+                return
+            }
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func runReviewRequest(
+        text: String?,
+        file: UploadedFile?,
+        metadata: [String: JSONValue]
+    ) async throws -> ReviewResult {
+        try await appState.apiClient.runReview(
+            text: text,
+            file: file,
+            metadata: metadata
+        )
+    }
+
+    private func migrateExtraInfoIfNeeded() {
+        guard !hasMigratedExtraInfo else {
+            return
+        }
+        defer { hasMigratedExtraInfo = true }
+        guard let legacyText = extraInfo.nilIfBlank else {
+            return
+        }
+
+        let draft = parseLegacyExtraInfo(legacyText)
+        if contractType.nilIfBlank == nil, let value = draft.contractType {
+            contractType = value
+        }
+        if userRole.nilIfBlank == nil, let value = draft.userRole {
+            userRole = value
+        }
+        if focusAreas.nilIfBlank == nil {
+            focusAreas = draft.focusAreas ?? legacyText
+        }
+        extraInfo = ""
+        if hasReviewMetadata {
+            isAdditionalInfoExpanded = true
+        }
+    }
+
+    private func parseLegacyExtraInfo(_ value: String) -> ReviewMetadataDraft {
+        var draft = ReviewMetadataDraft()
+        var unlabeledLines: [String] = []
+        var hasLabeledValue = false
+
+        for line in value.components(separatedBy: .newlines) {
+            guard let cleanedLine = line.nilIfBlank else {
+                continue
+            }
+            guard let separator = cleanedLine.firstIndex(where: { $0 == ":" || $0 == "：" }) else {
+                unlabeledLines.append(cleanedLine)
+                continue
+            }
+
+            let label = String(cleanedLine[..<separator]).trimmedForInput
+            let contentStart = cleanedLine.index(after: separator)
+            guard let content = String(cleanedLine[contentStart...]).nilIfBlank else {
+                continue
+            }
+
+            hasLabeledValue = true
+            let normalizedLabel = label
+                .replacingOccurrences(of: " ", with: "")
+                .replacingOccurrences(of: "_", with: "")
+                .lowercased()
+
+            if normalizedLabel.contains("合同类型") || normalizedLabel.contains("contracttype") {
+                draft.contractType = content
+            } else if normalizedLabel.contains("我的立场")
+                || normalizedLabel.contains("立场")
+                || normalizedLabel.contains("身份")
+                || normalizedLabel.contains("role") {
+                draft.userRole = content
+            } else if normalizedLabel.contains("关注")
+                || normalizedLabel.contains("重点")
+                || normalizedLabel.contains("focus") {
+                draft.focusAreas = content
+            } else {
+                unlabeledLines.append(cleanedLine)
+            }
+        }
+
+        if let focusText = unlabeledLines.joined(separator: "\n").nilIfBlank, draft.focusAreas == nil {
+            draft.focusAreas = focusText
+        }
+        guard !hasLabeledValue else {
+            return draft
+        }
+
+        let pieces = value
+            .components(separatedBy: CharacterSet(charactersIn: ",，;；"))
+            .compactMap(\.nilIfBlank)
+        guard pieces.count >= 3 else {
+            return draft
+        }
+        draft.contractType = draft.contractType ?? pieces[0]
+        draft.userRole = draft.userRole ?? pieces[1]
+        draft.focusAreas = draft.focusAreas ?? pieces.dropFirst(2).joined(separator: "，")
+        return draft
+    }
+
+    private func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError {
+            return true
+        }
+        if let urlError = error as? URLError {
+            return urlError.code == .cancelled
+        }
+        let nsError = error as NSError
+        return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled
     }
 
     private func retry() {
@@ -318,11 +608,15 @@ struct ReviewInputView: View {
                 await upload(lastImportedURL)
             }
         } else if hasInput {
-            Task {
-                await runReview()
-            }
+            startReview()
         }
     }
+}
+
+private struct ReviewMetadataDraft {
+    var contractType: String?
+    var userRole: String?
+    var focusAreas: String?
 }
 
 private struct LinedPaperBackground: View {

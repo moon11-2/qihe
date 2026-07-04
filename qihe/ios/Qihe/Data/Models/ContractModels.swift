@@ -238,6 +238,11 @@ struct RiskItem: Identifiable, Codable, Hashable {
     var basis: String?
     var legalBasis: [String]?
     var originalText: String?
+    var clauseId: String?
+    var clauseTitle: String?
+    var originalExcerpt: String?
+    var startOffset: Int?
+    var endOffset: Int?
 
     init(
         id: UUID = UUID(),
@@ -251,7 +256,12 @@ struct RiskItem: Identifiable, Codable, Hashable {
         suggestedReplacement: String? = nil,
         basis: String? = nil,
         legalBasis: [String]? = nil,
-        originalText: String? = nil
+        originalText: String? = nil,
+        clauseId: String? = nil,
+        clauseTitle: String? = nil,
+        originalExcerpt: String? = nil,
+        startOffset: Int? = nil,
+        endOffset: Int? = nil
     ) {
         self.id = id
         self.riskTitle = riskTitle
@@ -265,6 +275,11 @@ struct RiskItem: Identifiable, Codable, Hashable {
         self.basis = basis
         self.legalBasis = legalBasis
         self.originalText = originalText
+        self.clauseId = clauseId
+        self.clauseTitle = clauseTitle
+        self.originalExcerpt = originalExcerpt
+        self.startOffset = startOffset
+        self.endOffset = endOffset
     }
 
     enum CodingKeys: String, CodingKey {
@@ -292,6 +307,16 @@ struct RiskItem: Identifiable, Codable, Hashable {
         case originalText
         case originalTextSnake = "original_text"
         case text
+        case clauseId
+        case clauseIdSnake = "clause_id"
+        case clauseTitle
+        case clauseTitleSnake = "clause_title"
+        case originalExcerpt
+        case originalExcerptSnake = "original_excerpt"
+        case startOffset
+        case startOffsetSnake = "start_offset"
+        case endOffset
+        case endOffsetSnake = "end_offset"
     }
 
     var displayTitle: String {
@@ -332,6 +357,11 @@ struct RiskItem: Identifiable, Codable, Hashable {
         basis = try container.decodeStringIfPresent(forKeys: [.basis])
         legalBasis = try container.decodeStringListIfPresent(forKeys: [.legalBasis, .legalBasisSnake])
         originalText = try container.decodeStringIfPresent(forKeys: [.originalText, .originalTextSnake, .text])
+        clauseId = try container.decodeStringIfPresent(forKeys: [.clauseId, .clauseIdSnake])
+        clauseTitle = try container.decodeStringIfPresent(forKeys: [.clauseTitle, .clauseTitleSnake])
+        originalExcerpt = try container.decodeStringIfPresent(forKeys: [.originalExcerpt, .originalExcerptSnake])
+        startOffset = try container.decodeIntIfPresent(forKeys: [.startOffset, .startOffsetSnake])
+        endOffset = try container.decodeIntIfPresent(forKeys: [.endOffset, .endOffsetSnake])
     }
 
     func encode(to encoder: Encoder) throws {
@@ -347,6 +377,11 @@ struct RiskItem: Identifiable, Codable, Hashable {
         try container.encodeIfPresent(basis, forKey: .basis)
         try container.encodeIfPresent(legalBasis, forKey: .legalBasis)
         try container.encodeIfPresent(originalText, forKey: .originalText)
+        try container.encodeIfPresent(clauseId, forKey: .clauseId)
+        try container.encodeIfPresent(clauseTitle, forKey: .clauseTitle)
+        try container.encodeIfPresent(originalExcerpt, forKey: .originalExcerpt)
+        try container.encodeIfPresent(startOffset, forKey: .startOffset)
+        try container.encodeIfPresent(endOffset, forKey: .endOffset)
     }
 }
 

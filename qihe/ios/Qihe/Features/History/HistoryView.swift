@@ -4,11 +4,16 @@ struct HistoryView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var historyStore: HistoryStore
     @State private var isClearConfirmationPresented = false
+    @State private var selectedFilter: HistoryFilter = .all
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
+                    if !historyStore.records.isEmpty {
+                        filterPicker
+                    }
+
                     if historyStore.records.isEmpty {
                         PaperCard {
                             EmptyStateView(
@@ -16,8 +21,15 @@ struct HistoryView: View {
                                 detail: "审查、生成或过程对话完成后，会在这里留下可继续打开的本地记录。"
                             )
                         }
+                    } else if filteredRecords.isEmpty {
+                        PaperCard {
+                            EmptyStateView(
+                                title: "暂无\(selectedFilter.title)记录",
+                                detail: "切换到全部，或完成新的\(selectedFilter.title)后再回来查看。"
+                            )
+                        }
                     } else {
-                        ForEach(historyStore.records) { record in
+                        ForEach(filteredRecords) { record in
                             HistoryRecordRow(record: record) {
                                 appState.openHistoryRecord(record)
                             }
@@ -52,6 +64,57 @@ struct HistoryView: View {
             } message: {
                 Text("本地保存的历史记录将被删除，此操作无法撤销。")
             }
+        }
+    }
+
+    private var filteredRecords: [HistoryRecord] {
+        historyStore.records.filter { selectedFilter.includes($0) }
+    }
+
+    private var filterPicker: some View {
+        Picker("历史类型", selection: $selectedFilter) {
+            ForEach(HistoryFilter.allCases) { filter in
+                Text(filter.title).tag(filter)
+            }
+        }
+        .pickerStyle(.segmented)
+        .accessibilityLabel("历史筛选")
+    }
+}
+
+private enum HistoryFilter: String, CaseIterable, Identifiable {
+    case all
+    case review
+    case generate
+    case chat
+
+    var id: String {
+        rawValue
+    }
+
+    var title: String {
+        switch self {
+        case .all:
+            return "全部"
+        case .review:
+            return "审查"
+        case .generate:
+            return "生成"
+        case .chat:
+            return "对话"
+        }
+    }
+
+    func includes(_ record: HistoryRecord) -> Bool {
+        switch self {
+        case .all:
+            return true
+        case .review:
+            return record.type == .review
+        case .generate:
+            return record.type == .generate
+        case .chat:
+            return record.type == .chat
         }
     }
 }
