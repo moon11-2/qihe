@@ -50,30 +50,30 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
 默认后端地址是：
 
 ```txt
-http://127.0.0.1:8010
+http://127.0.0.1:8000
 ```
 
 仓库提交了 shared Xcode Scheme，直接在 Xcode 里 Run `Qihe` 时会注入：
 
 ```txt
-QIHE_API_BASE_URL=http://127.0.0.1:8010
+QIHE_API_BASE_URL=http://127.0.0.1:8000
 ```
 
 本机联调前请先启动后端：
 
 ```bash
 cd qihe/backend
-uvicorn app.main:app --host 127.0.0.1 --port 8010
+uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-如果 8010 被占用，或真机联调需要访问 Mac 的局域网地址，可在 Xcode Scheme 的 Run > Arguments > Environment Variables 中覆盖 `QIHE_API_BASE_URL`，例如：
+如果 8000 被占用，或真机联调需要访问 Mac 的局域网地址，可在 Xcode Scheme 的 Run > Arguments > Environment Variables 中覆盖 `QIHE_API_BASE_URL`，例如：
 
 ```txt
-http://192.168.1.10:8010
+http://192.168.1.10:8000
 ```
 
 源码级调试和命令行运行也可以通过环境变量覆盖：
 
 ```bash
-QIHE_API_BASE_URL=http://192.168.1.10:8010 swift build
+QIHE_API_BASE_URL=http://192.168.1.10:8000 swift build
 ```

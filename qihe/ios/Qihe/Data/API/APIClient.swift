@@ -54,12 +54,16 @@ struct APIClient {
         )
     }
 
-    func runReview(text: String?, file: UploadedFile?) async throws -> ReviewResult {
+    func runReview(
+        text: String?,
+        file: UploadedFile?,
+        metadata structuredMetadata: [String: JSONValue] = [:]
+    ) async throws -> ReviewResult {
         let request = ContractRunRequest(
             mode: .review,
             text: text?.trimmedForInput.nilIfBlank,
             fileId: file?.fileId,
-            metadata: metadata(for: file)
+            metadata: metadata(for: file, merging: structuredMetadata)
         )
         let response: ContractRunResponse<ReviewResult> = try await send(
             path: "api/contracts/run",
@@ -69,12 +73,16 @@ struct APIClient {
         return response.result
     }
 
-    func runGenerate(text: String?, file: UploadedFile?) async throws -> GenerateResult {
+    func runGenerate(
+        text: String?,
+        file: UploadedFile?,
+        metadata structuredMetadata: [String: JSONValue] = [:]
+    ) async throws -> GenerateResult {
         let request = ContractRunRequest(
             mode: .generate,
             text: text?.trimmedForInput.nilIfBlank,
             fileId: file?.fileId,
-            metadata: metadata(for: file)
+            metadata: metadata(for: file, merging: structuredMetadata)
         )
         let response: ContractRunResponse<GenerateResult> = try await send(
             path: "api/contracts/run",
@@ -171,14 +179,17 @@ struct APIClient {
         return body
     }
 
-    private func metadata(for file: UploadedFile?) -> [String: JSONValue] {
+    private func metadata(
+        for file: UploadedFile?,
+        merging extraMetadata: [String: JSONValue] = [:]
+    ) -> [String: JSONValue] {
+        var metadata = extraMetadata
         guard let file else {
-            return [:]
+            return metadata
         }
-        return [
-            "filename": .string(file.filename),
-            "content_type": .string(file.contentType ?? "application/octet-stream")
-        ]
+        metadata["filename"] = .string(file.filename)
+        metadata["content_type"] = .string(file.contentType ?? "application/octet-stream")
+        return metadata
     }
 
     private var encoder: JSONEncoder {

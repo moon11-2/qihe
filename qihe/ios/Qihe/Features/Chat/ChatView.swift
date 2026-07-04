@@ -14,6 +14,7 @@ struct ChatView: View {
     @State private var errorMessage: String?
     @State private var lastFailedUserMessageId: UUID?
     @State private var suggestedModes: Set<ContractMode> = []
+    @State private var actionRecommendations: [UUID: ChatActionRecommendation] = [:]
     @State private var isSending = false
     @State private var didRestoreHistory = false
     @State private var didSubmitInitialMessage = false
@@ -38,7 +39,13 @@ struct ChatView: View {
                             emptyState
                         } else {
                             ForEach(messages) { message in
-                                ChatBubble(message: message)
+                                ChatBubble(
+                                    message: message,
+                                    recommendation: actionRecommendations[message.id],
+                                    isActionDisabled: isSending
+                                ) { mode in
+                                    openMode(mode, prefill: actionRecommendations[message.id]?.prefill)
+                                }
                             }
                         }
 
@@ -110,8 +117,6 @@ struct ChatView: View {
                 }
             }
 
-            handoffPanel
-
             HStack(alignment: .bottom, spacing: 10) {
                 TextField("输入合同问题或处理目标", text: $input, axis: .vertical)
                     .font(QiheFont.body(size: 15))
@@ -155,39 +160,6 @@ struct ChatView: View {
         .background(QiheColor.paper)
     }
 
-    @ViewBuilder
-    private var handoffPanel: some View {
-        if latestUserInput != nil {
-            PaperCard(padding: 12) {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        Text("进入处理")
-                            .font(QiheFont.body(size: 14, weight: .semibold))
-                            .foregroundStyle(QiheColor.ink)
-
-                        Spacer()
-
-                        if !suggestedModes.isEmpty {
-                            QiheStatusPill(text: "已推荐")
-                        }
-                    }
-
-                    HStack(spacing: 10) {
-                        ForEach(availableActionModes, id: \.self) { mode in
-                            QiheSecondaryButton(
-                                title: mode.actionTitle,
-                                systemImage: mode.systemImage,
-                                isDisabled: isSending
-                            ) {
-                                openMode(mode)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     private var canSend: Bool {
         !isSending && input.trimmedForInput.nilIfBlank != nil
     }
@@ -199,25 +171,17 @@ struct ChatView: View {
             .nilIfBlank
     }
 
-    private var availableActionModes: [ContractMode] {
-        let orderedModes: [ContractMode] = [.review, .generate]
-        guard !suggestedModes.isEmpty else {
-            return orderedModes
-        }
-        return orderedModes.filter { suggestedModes.contains($0) }
-    }
-
     private var nextStepDetail: String {
         if isSending {
             return "正在等待后端回复"
         }
 
         if !suggestedModes.isEmpty {
-            return "可转入\(availableActionModes.map(\.label).joined(separator: "或"))"
+            return "最新回复已提供\(orderedModes(from: suggestedModes).map(\.label).joined(separator: "或"))入口"
         }
 
         if latestUserInput != nil {
-            return "可转入合同审查或合同生成"
+            return "继续对话，AI 会在回复中给出入口"
         }
 
         return "等待最近一次用户输入"
@@ -244,6 +208,7 @@ struct ChatView: View {
         recordId = record.id
         messages = restoredMessages
         suggestedModes = []
+        actionRecommendations = [:]
         errorMessage = nil
         lastFailedUserMessageId = nil
     }
@@ -318,8 +283,12 @@ struct ChatView: View {
         do {
             let response = try await apiClient.chat(messages: requestMessages)
             let reply = response.reply.nilIfBlank ?? "已收到你的请求，但服务未返回文本回复。"
-            messages.append(ChatMessage(role: .assistant, content: reply))
+            let assistantMessage = ChatMessage(role: .assistant, content: reply)
+            messages.append(assistantMessage)
             suggestedModes = modes(from: response)
+            if let recommendation = recommendation(from: response, prefill: latestUserInput(in: requestMessages)) {
+                actionRecommendations[assistantMessage.id] = recommendation
+            }
             lastFailedUserMessageId = nil
             errorMessage = nil
         } catch {
@@ -340,8 +309,8 @@ struct ChatView: View {
     }
 
     @MainActor
-    private func openMode(_ mode: ContractMode) {
-        guard let prefill = latestUserInput else {
+    private func openMode(_ mode: ContractMode, prefill recommendedPrefill: String? = nil) {
+        guard let prefill = recommendedPrefill?.nilIfBlank ?? latestUserInput else {
             return
         }
 
@@ -356,13 +325,74 @@ struct ChatView: View {
 
     private func modes(from response: ChatResponse) -> Set<ContractMode> {
         var modes = Set(response.options)
+        response.needInput.flatMap(contractModes(from:)).forEach { modes.insert($0) }
         if let route = response.route {
             modes.insert(route)
         }
-        if let intentMode = ContractMode(rawValue: response.intent) {
-            modes.insert(intentMode)
-        }
+        contractModes(from: response.intent).forEach { modes.insert($0) }
         return modes
+    }
+
+    private func recommendation(from response: ChatResponse, prefill: String?) -> ChatActionRecommendation? {
+        guard let prefill = prefill?.nilIfBlank else {
+            return nil
+        }
+
+        if let route = response.route {
+            return ChatActionRecommendation(
+                primaryRoute: route,
+                modes: [route, route.alternative],
+                prefill: prefill
+            )
+        }
+
+        let responseModes = orderedModes(from: modes(from: response))
+        guard !responseModes.isEmpty else {
+            return nil
+        }
+
+        return ChatActionRecommendation(
+            primaryRoute: responseModes.count == 1 ? responseModes[0] : nil,
+            modes: responseModes,
+            prefill: prefill
+        )
+    }
+
+    private func latestUserInput(in messages: [ChatMessage]) -> String? {
+        messages.reversed()
+            .first { $0.role == .user }?
+            .content
+            .nilIfBlank
+    }
+
+    private func contractModes(from rawValue: String) -> [ContractMode] {
+        let normalized = rawValue.trimmedForInput.lowercased()
+        guard !normalized.isEmpty else {
+            return []
+        }
+
+        var modes = Set<ContractMode>()
+        if normalized.contains("审查") {
+            modes.insert(.review)
+        }
+        if normalized.contains("生成") {
+            modes.insert(.generate)
+        }
+
+        normalized
+            .split { !$0.isLetter }
+            .compactMap { ContractMode(rawValue: String($0)) }
+            .forEach { modes.insert($0) }
+
+        if let mode = ContractMode(rawValue: normalized) {
+            modes.insert(mode)
+        }
+
+        return orderedModes(from: modes)
+    }
+
+    private func orderedModes(from modes: Set<ContractMode>) -> [ContractMode] {
+        Self.modeOrder.filter { modes.contains($0) }
     }
 
     private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool = true) {
@@ -378,10 +408,14 @@ struct ChatView: View {
     }
 
     private static let bottomAnchorId = "chat-bottom-anchor"
+    private static let modeOrder: [ContractMode] = [.review, .generate]
 }
 
 private struct ChatBubble: View {
     let message: ChatMessage
+    var recommendation: ChatActionRecommendation?
+    var isActionDisabled = false
+    let onSelectMode: (ContractMode) -> Void
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 10) {
@@ -394,18 +428,28 @@ private struct ChatBubble: View {
                     .font(QiheFont.caption(size: 11, weight: .semibold))
                     .foregroundStyle(titleColor)
 
-                Text(message.content)
-                    .font(QiheFont.body(size: 15))
-                    .foregroundStyle(textColor)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(background)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(borderColor, lineWidth: message.role == .user ? 0 : 1)
-                    )
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(message.content)
+                        .font(QiheFont.body(size: 15))
+                        .foregroundStyle(textColor)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if message.role == .assistant, let recommendation {
+                        ChatRecommendationActions(
+                            recommendation: recommendation,
+                            isDisabled: isActionDisabled,
+                            onSelectMode: onSelectMode
+                        )
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(background)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(borderColor, lineWidth: message.role == .user ? 0 : 1)
+                )
             }
 
             if message.role != .user {
@@ -454,6 +498,72 @@ private struct ChatBubble: View {
     }
 }
 
+private struct ChatActionRecommendation: Equatable {
+    let primaryRoute: ContractMode?
+    let modes: [ContractMode]
+    let prefill: String
+
+    var showsChoicePair: Bool {
+        primaryRoute == nil && Set(modes) == Set([.review, .generate])
+    }
+
+    var primaryMode: ContractMode? {
+        primaryRoute ?? modes.first
+    }
+
+    var secondaryMode: ContractMode? {
+        if let primaryRoute {
+            return primaryRoute.alternative
+        }
+        guard modes.count > 1 else {
+            return nil
+        }
+        return modes[1]
+    }
+}
+
+private struct ChatRecommendationActions: View {
+    let recommendation: ChatActionRecommendation
+    var isDisabled = false
+    let onSelectMode: (ContractMode) -> Void
+
+    var body: some View {
+        if recommendation.showsChoicePair {
+            HStack(spacing: 8) {
+                ForEach(recommendation.modes, id: \.self) { mode in
+                    QiheSecondaryButton(
+                        title: mode.label,
+                        systemImage: mode.systemImage,
+                        isDisabled: isDisabled
+                    ) {
+                        onSelectMode(mode)
+                    }
+                }
+            }
+        } else if let primaryMode = recommendation.primaryMode {
+            VStack(spacing: 8) {
+                QihePrimaryButton(
+                    title: primaryMode.enterTitle,
+                    systemImage: primaryMode.systemImage,
+                    isDisabled: isDisabled
+                ) {
+                    onSelectMode(primaryMode)
+                }
+
+                if let secondaryMode = recommendation.secondaryMode {
+                    QiheSecondaryButton(
+                        title: secondaryMode.switchTitle,
+                        systemImage: secondaryMode.systemImage,
+                        isDisabled: isDisabled
+                    ) {
+                        onSelectMode(secondaryMode)
+                    }
+                }
+            }
+        }
+    }
+}
+
 private struct TypingIndicator: View {
     var body: some View {
         HStack {
@@ -489,12 +599,21 @@ private extension ContractMode {
         }
     }
 
-    var actionTitle: String {
+    var enterTitle: String {
         switch self {
         case .review:
-            return "审查"
+            return "进入审查"
         case .generate:
-            return "生成"
+            return "进入生成"
+        }
+    }
+
+    var switchTitle: String {
+        switch self {
+        case .review:
+            return "改为审查"
+        case .generate:
+            return "改为生成"
         }
     }
 
@@ -504,6 +623,15 @@ private extension ContractMode {
             return "doc.text.magnifyingglass"
         case .generate:
             return "doc.text.fill"
+        }
+    }
+
+    var alternative: ContractMode {
+        switch self {
+        case .review:
+            return .generate
+        case .generate:
+            return .review
         }
     }
 }

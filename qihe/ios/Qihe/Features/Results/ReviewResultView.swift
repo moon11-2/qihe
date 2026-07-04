@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 struct ReviewResultView: View {
@@ -8,6 +9,7 @@ struct ReviewResultView: View {
     @State private var isExporting = false
     @State private var shareDocument: ShareDocument?
     @State private var errorMessage: String?
+    @State private var highlightedRiskID: UUID?
 
     var body: some View {
         ZStack {
@@ -18,26 +20,37 @@ struct ReviewResultView: View {
                     tabBar
                     Divider().background(QiheColor.line)
 
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 16) {
-                            if let errorMessage {
-                                ErrorBanner(message: errorMessage, retryTitle: "重试导出") {
-                                    Task {
-                                        await exportWord(payload)
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 16) {
+                                if let errorMessage {
+                                    ErrorBanner(message: errorMessage, retryTitle: "重试导出") {
+                                        Task {
+                                            await exportWord(payload)
+                                        }
                                     }
                                 }
-                            }
 
-                            switch selectedTab {
-                            case .source:
-                                sourceTab(payload)
-                            case .risks:
-                                riskTab(payload.result)
-                            case .subjects:
-                                subjectsTab(payload.result)
+                                switch selectedTab {
+                                case .source:
+                                    sourceTab(payload)
+                                case .risks:
+                                    riskTab(payload.result)
+                                case .subjects:
+                                    subjectsTab(payload.result)
+                                }
                             }
+                            .padding(20)
                         }
-                        .padding(20)
+                        .onChange(of: highlightedRiskID) { _, _ in
+                            scrollToHighlightedRisk(in: proxy)
+                        }
+                        .onChange(of: selectedTab) { _, newTab in
+                            guard newTab == .risks else {
+                                return
+                            }
+                            scrollToHighlightedRisk(in: proxy)
+                        }
                     }
                 }
             } else {
@@ -100,14 +113,32 @@ struct ReviewResultView: View {
     }
 
     private func sourceTab(_ payload: ReviewHistoryPayload) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let sourceMap = SourceRiskLocator.annotate(result: payload.result)
+        let lastParagraphID = sourceMap.paragraphs.last?.id
+
+        return VStack(alignment: .leading, spacing: 10) {
             QiheSectionHeader(title: "原文", subtitle: payload.attachment?.filename)
 
-            PaperCard {
-                Text(payload.result.sourceText)
-                    .font(QiheFont.body(size: 14))
-                    .foregroundStyle(QiheColor.inkSoft)
-                    .fixedSize(horizontal: false, vertical: true)
+            if !sourceMap.unmatchedRisks.isEmpty {
+                UnlocatedRiskNotice(risks: sourceMap.unmatchedRisks) { risk in
+                    focusRisk(risk)
+                }
+            }
+
+            PaperCard(padding: 12) {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(sourceMap.paragraphs) { paragraph in
+                        SourceParagraphBlock(paragraph: paragraph) { risk in
+                            focusRisk(risk)
+                        }
+
+                        if paragraph.id != lastParagraphID {
+                            Divider()
+                                .background(QiheColor.line)
+                                .padding(.vertical, 4)
+                        }
+                    }
+                }
             }
         }
     }
@@ -126,9 +157,25 @@ struct ReviewResultView: View {
                 }
             } else {
                 ForEach(result.risks) { risk in
-                    RiskReportCard(risk: risk)
+                    RiskReportCard(risk: risk, isHighlighted: highlightedRiskID == risk.id)
+                        .id(risk.id)
                 }
             }
+        }
+    }
+
+    private func focusRisk(_ risk: RiskItem) {
+        highlightedRiskID = risk.id
+        selectedTab = .risks
+    }
+
+    private func scrollToHighlightedRisk(in proxy: ScrollViewProxy) {
+        guard selectedTab == .risks, let highlightedRiskID else {
+            return
+        }
+
+        withAnimation(.easeInOut(duration: 0.26)) {
+            proxy.scrollTo(highlightedRiskID, anchor: .top)
         }
     }
 
@@ -306,8 +353,567 @@ private struct ReviewStatCell: View {
     }
 }
 
+private struct SourceRiskMap {
+    let paragraphs: [AnnotatedSourceParagraph]
+    let unmatchedRisks: [RiskItem]
+}
+
+private struct SourceTextParagraph {
+    let id: Int
+    let text: String
+    let normalizedText: String
+
+    init(id: Int, text: String) {
+        self.id = id
+        self.text = text
+        normalizedText = text.sourceMatchNormalized
+    }
+}
+
+private struct AnnotatedSourceParagraph: Identifiable {
+    let id: Int
+    let text: String
+    let risks: [RiskItem]
+
+    var primaryRisk: RiskItem? {
+        risks.first
+    }
+}
+
+private struct UnlocatedRiskNotice: View {
+    let risks: [RiskItem]
+    let onSelectRisk: (RiskItem) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 14, weight: .semibold))
+
+                Text("未能精确定位的风险")
+                    .font(QiheFont.body(size: 13, weight: .semibold))
+
+                Spacer()
+
+                Text("\(risks.count)项")
+                    .font(QiheFont.caption(size: 11, weight: .semibold))
+                    .padding(.horizontal, 7)
+                    .frame(height: 23)
+                    .foregroundStyle(QiheColor.amber)
+                    .background(QiheColor.card.opacity(0.78))
+                    .clipShape(Capsule())
+            }
+            .foregroundStyle(QiheColor.amber)
+
+            FlowLayout(spacing: 6) {
+                ForEach(Array(risks.prefix(4))) { risk in
+                    Button {
+                        onSelectRisk(risk)
+                    } label: {
+                        Text(risk.displayTitle.truncated(to: 16))
+                            .font(QiheFont.caption(size: 11, weight: .semibold))
+                            .foregroundStyle(QiheColor.inkSoft)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.82)
+                            .padding(.horizontal, 8)
+                            .frame(height: 26)
+                            .background(QiheColor.card.opacity(0.76))
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                if risks.count > 4 {
+                    Text("+\(risks.count - 4)")
+                        .font(QiheFont.caption(size: 11, weight: .semibold))
+                        .foregroundStyle(QiheColor.muted)
+                        .padding(.horizontal, 8)
+                        .frame(height: 26)
+                        .background(QiheColor.card.opacity(0.76))
+                        .clipShape(Capsule())
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(QiheColor.amberSoft.opacity(0.76))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(QiheColor.amber.opacity(0.28), lineWidth: 1)
+        )
+    }
+}
+
+private struct SourceParagraphBlock: View {
+    let paragraph: AnnotatedSourceParagraph
+    let onSelectRisk: (RiskItem) -> Void
+
+    var body: some View {
+        Group {
+            if let primaryRisk = paragraph.primaryRisk {
+                Button {
+                    onSelectRisk(primaryRisk)
+                } label: {
+                    content
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("有风险段落，\(primaryRisk.riskLevel.label)")
+            } else {
+                content
+            }
+        }
+    }
+
+    private var content: some View {
+        HStack(alignment: .top, spacing: 10) {
+            if paragraph.primaryRisk != nil {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(QiheColor.navy)
+                    .frame(width: 3.5)
+                    .padding(.vertical, 2)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                if !paragraph.risks.isEmpty {
+                    FlowLayout(spacing: 6) {
+                        ForEach(Array(paragraph.risks.prefix(3))) { risk in
+                            SourceRiskLevelPill(level: risk.riskLevel)
+                        }
+
+                        if paragraph.risks.count > 3 {
+                            Text("+\(paragraph.risks.count - 3)")
+                                .font(QiheFont.caption(size: 10.5, weight: .semibold))
+                                .foregroundStyle(QiheColor.navy)
+                                .padding(.horizontal, 7)
+                                .frame(height: 23)
+                                .background(QiheColor.card.opacity(0.82))
+                                .clipShape(Capsule())
+                        }
+                    }
+                }
+
+                Text(paragraph.text)
+                    .font(QiheFont.body(size: 14))
+                    .foregroundStyle(QiheColor.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, paragraph.primaryRisk == nil ? 0 : 12)
+        .padding(.vertical, paragraph.primaryRisk == nil ? 8 : 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(paragraph.primaryRisk == nil ? Color.clear : QiheColor.navySoft.opacity(0.74))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(paragraph.primaryRisk == nil ? Color.clear : QiheColor.navy.opacity(0.18), lineWidth: 1)
+        )
+    }
+}
+
+private struct SourceRiskLevelPill: View {
+    let level: RiskLevel
+
+    var body: some View {
+        Text(level.label)
+            .font(QiheFont.caption(size: 10.5, weight: .semibold))
+            .foregroundStyle(level.foreground)
+            .padding(.horizontal, 7)
+            .frame(height: 23)
+            .background(level.background)
+            .clipShape(Capsule())
+    }
+}
+
+private enum SourceRiskLocator {
+    static func annotate(result: ReviewResult) -> SourceRiskMap {
+        let paragraphs = splitSourceText(result.sourceText).enumerated().map { index, text in
+            SourceTextParagraph(id: index, text: text)
+        }
+        var risksByParagraph: [Int: [RiskItem]] = [:]
+        var unmatchedRisks: [RiskItem] = []
+
+        for risk in result.risks {
+            if let paragraphID = matchedParagraphID(for: risk, in: paragraphs) {
+                risksByParagraph[paragraphID, default: []].append(risk)
+            } else {
+                unmatchedRisks.append(risk)
+            }
+        }
+
+        let annotatedParagraphs = paragraphs.map { paragraph in
+            let risks = (risksByParagraph[paragraph.id] ?? []).sortedForSourceDisplay
+            return AnnotatedSourceParagraph(id: paragraph.id, text: paragraph.text, risks: risks)
+        }
+
+        return SourceRiskMap(paragraphs: annotatedParagraphs, unmatchedRisks: unmatchedRisks)
+    }
+
+    private static func matchedParagraphID(for risk: RiskItem, in paragraphs: [SourceTextParagraph]) -> Int? {
+        if let id = uniqueParagraphID(for: clauseCandidates(from: risk), in: paragraphs, minimumLength: 3) {
+            return id
+        }
+
+        if let id = uniqueParagraphID(
+            for: originalTextCandidates(from: risk),
+            in: paragraphs,
+            minimumLength: 8,
+            allowReverseContainment: true
+        ) {
+            return id
+        }
+
+        if let id = uniqueParagraphID(for: quotedFieldCandidates(from: risk), in: paragraphs, minimumLength: 8) {
+            return id
+        }
+
+        return uniqueParagraphID(for: longFieldCandidates(from: risk), in: paragraphs, minimumLength: 14)
+    }
+
+    private static func splitSourceText(_ text: String) -> [String] {
+        let normalizedText = text
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .trimmedForInput
+
+        guard !normalizedText.isEmpty else {
+            return []
+        }
+
+        let clauseSegments = splitAtMatches(
+            in: normalizedText,
+            pattern: #"(^|\n|[。；;])\s*(第\s*[一二三四五六七八九十百千万零〇两0-9]+\s*条\s*[：:、.．]?)"#,
+            captureGroup: 2
+        )
+        if clauseSegments.count > 1 {
+            return clauseSegments
+        }
+
+        let numberedSegments = splitAtMatches(
+            in: normalizedText,
+            pattern: #"(^|\n)\s*([一二三四五六七八九十0-9]+[、.．])"#,
+            captureGroup: 2
+        )
+        if numberedSegments.count > 1 {
+            return numberedSegments
+        }
+
+        let blankSeparated = normalizedText
+            .replacingOccurrences(of: #"\n\s*\n+"#, with: "\u{000B}", options: .regularExpression)
+            .components(separatedBy: "\u{000B}")
+            .compactMap(\.nilIfBlank)
+        if blankSeparated.count > 1 {
+            return blankSeparated
+        }
+
+        let lineSeparated = normalizedText
+            .components(separatedBy: "\n")
+            .compactMap(\.nilIfBlank)
+
+        return lineSeparated.isEmpty ? [normalizedText] : lineSeparated
+    }
+
+    private static func splitAtMatches(in text: String, pattern: String, captureGroup: Int) -> [String] {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+            return []
+        }
+
+        let matches = regex.matches(in: text, range: NSRange(text.startIndex..<text.endIndex, in: text))
+        var starts = matches.compactMap { match -> String.Index? in
+            guard match.numberOfRanges > captureGroup,
+                  let range = Range(match.range(at: captureGroup), in: text) else {
+                return nil
+            }
+            return range.lowerBound
+        }
+        starts.sort()
+        starts = starts.reduce(into: []) { uniqueStarts, start in
+            if uniqueStarts.last != start {
+                uniqueStarts.append(start)
+            }
+        }
+
+        guard !starts.isEmpty else {
+            return []
+        }
+
+        var boundaries = starts
+        if let first = starts.first, first > text.startIndex {
+            boundaries.insert(text.startIndex, at: 0)
+        }
+        boundaries.append(text.endIndex)
+
+        return boundaries.indices.dropLast().compactMap { index in
+            let start = boundaries[index]
+            let end = boundaries[boundaries.index(after: index)]
+            return String(text[start..<end]).nilIfBlank
+        }
+    }
+
+    private static func uniqueParagraphID(
+        for candidates: [String],
+        in paragraphs: [SourceTextParagraph],
+        minimumLength: Int,
+        allowReverseContainment: Bool = false
+    ) -> Int? {
+        for candidate in orderedUnique(candidates) {
+            let normalizedCandidate = candidate.sourceMatchNormalized
+            guard normalizedCandidate.count >= minimumLength else {
+                continue
+            }
+
+            let matchedIDs = paragraphs.compactMap { paragraph -> Int? in
+                if paragraph.normalizedText.contains(normalizedCandidate) {
+                    return paragraph.id
+                }
+
+                if allowReverseContainment,
+                   paragraph.normalizedText.count >= minimumLength,
+                   normalizedCandidate.contains(paragraph.normalizedText) {
+                    return paragraph.id
+                }
+
+                return nil
+            }
+
+            let uniqueIDs = Array(Set(matchedIDs))
+            if uniqueIDs.count == 1 {
+                return uniqueIDs[0]
+            }
+        }
+
+        return nil
+    }
+
+    private static func clauseCandidates(from risk: RiskItem) -> [String] {
+        guard let clause = risk.clause?.nilIfBlank else {
+            return []
+        }
+
+        var candidates = [clause]
+        candidates.append(contentsOf: clauseNumberCandidates(in: clause))
+        candidates.append(contentsOf: regexCaptures(
+            in: clause,
+            pattern: #"(^|\s)([一二三四五六七八九十0-9]+[、.．])"#,
+            captureGroup: 2
+        ))
+        return candidates
+    }
+
+    private static func originalTextCandidates(from risk: RiskItem) -> [String] {
+        guard let originalText = risk.originalText?.nilIfBlank else {
+            return []
+        }
+
+        return [originalText] + quotedSnippets(in: originalText) + sentenceSnippets(in: originalText)
+    }
+
+    private static func quotedFieldCandidates(from risk: RiskItem) -> [String] {
+        [
+            risk.originalText,
+            risk.riskTitle,
+            risk.suggestedReplacement,
+            risk.risk,
+            risk.riskAnalysis
+        ]
+        .compactMap { $0?.nilIfBlank }
+        .flatMap { quotedSnippets(in: $0) + sentenceSnippets(in: $0) }
+    }
+
+    private static func longFieldCandidates(from risk: RiskItem) -> [String] {
+        [
+            risk.originalText,
+            risk.riskTitle,
+            risk.suggestedReplacement,
+            risk.risk,
+            risk.riskAnalysis
+        ]
+        .compactMap { $0?.nilIfBlank }
+    }
+
+    private static func quotedSnippets(in text: String) -> [String] {
+        regexCaptures(
+            in: text,
+            pattern: #"[“"「『']([^”"」』']{4,})[”"」』']"#,
+            captureGroup: 1
+        )
+    }
+
+    private static func sentenceSnippets(in text: String) -> [String] {
+        text.components(separatedBy: CharacterSet(charactersIn: "。；;！!？?\n"))
+            .compactMap(\.nilIfBlank)
+    }
+
+    private static func clauseNumberCandidates(in text: String) -> [String] {
+        let numbers = regexCaptures(
+            in: text,
+            pattern: #"第\s*([一二三四五六七八九十百千万零〇两0-9]+)\s*条"#,
+            captureGroup: 1
+        )
+
+        return numbers.flatMap { rawNumber -> [String] in
+            var candidates = ["第\(rawNumber)条"]
+            let normalizedNumber = rawNumber.sourceMatchNormalized
+            if let number = Int(normalizedNumber), let chinese = chineseNumberText(for: number) {
+                candidates.append("第\(chinese)条")
+            } else if let number = chineseNumberValue(normalizedNumber) {
+                candidates.append("第\(number)条")
+            }
+            return candidates
+        }
+    }
+
+    private static func regexCaptures(in text: String, pattern: String, captureGroup: Int) -> [String] {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+            return []
+        }
+
+        return regex.matches(in: text, range: NSRange(text.startIndex..<text.endIndex, in: text))
+            .compactMap { match -> String? in
+                guard match.numberOfRanges > captureGroup,
+                      let range = Range(match.range(at: captureGroup), in: text) else {
+                    return nil
+                }
+                return String(text[range]).nilIfBlank
+            }
+    }
+
+    private static func orderedUnique(_ values: [String]) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+
+        for value in values {
+            let key = value.sourceMatchNormalized
+            guard !key.isEmpty, !seen.contains(key) else {
+                continue
+            }
+            seen.insert(key)
+            result.append(value)
+        }
+
+        return result
+    }
+
+    private static func chineseNumberText(for number: Int) -> String? {
+        let digits = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"]
+        guard number > 0, number < 100 else {
+            return nil
+        }
+
+        if number < 10 {
+            return digits[number]
+        }
+        if number == 10 {
+            return "十"
+        }
+
+        let tens = number / 10
+        let ones = number % 10
+        let prefix = tens == 1 ? "十" : "\(digits[tens])十"
+        return ones == 0 ? prefix : "\(prefix)\(digits[ones])"
+    }
+
+    private static func chineseNumberValue(_ text: String) -> Int? {
+        let digits: [Character: Int] = [
+            "零": 0,
+            "〇": 0,
+            "一": 1,
+            "二": 2,
+            "两": 2,
+            "三": 3,
+            "四": 4,
+            "五": 5,
+            "六": 6,
+            "七": 7,
+            "八": 8,
+            "九": 9
+        ]
+        let normalized = text.replacingOccurrences(of: "兩", with: "两")
+
+        if normalized == "十" {
+            return 10
+        }
+
+        if normalized.count == 1, let character = normalized.first, let value = digits[character], value > 0 {
+            return value
+        }
+
+        guard let tenIndex = normalized.firstIndex(of: "十") else {
+            return nil
+        }
+
+        let beforeTen = normalized[..<tenIndex]
+        let afterTen = normalized[normalized.index(after: tenIndex)...]
+
+        let tens: Int
+        if beforeTen.isEmpty {
+            tens = 1
+        } else if beforeTen.count == 1, let character = beforeTen.first, let value = digits[character], value > 0 {
+            tens = value
+        } else {
+            return nil
+        }
+
+        let ones: Int
+        if afterTen.isEmpty {
+            ones = 0
+        } else if afterTen.count == 1, let character = afterTen.first, let value = digits[character] {
+            ones = value
+        } else {
+            return nil
+        }
+
+        return tens * 10 + ones
+    }
+}
+
+private extension Array where Element == RiskItem {
+    var sortedForSourceDisplay: [RiskItem] {
+        sorted {
+            if $0.riskLevel.sourceDisplayRank == $1.riskLevel.sourceDisplayRank {
+                return $0.displayTitle < $1.displayTitle
+            }
+            return $0.riskLevel.sourceDisplayRank < $1.riskLevel.sourceDisplayRank
+        }
+    }
+}
+
+private extension RiskLevel {
+    var sourceDisplayRank: Int {
+        switch self {
+        case .high:
+            return 0
+        case .medium:
+            return 1
+        case .low:
+            return 2
+        case .pending:
+            return 3
+        case .unknown:
+            return 4
+        }
+    }
+}
+
+private extension String {
+    var sourceMatchNormalized: String {
+        let folded = folding(options: [.caseInsensitive, .widthInsensitive], locale: .current).lowercased()
+        var normalized = ""
+        for scalar in folded.unicodeScalars {
+            guard !CharacterSet.whitespacesAndNewlines.contains(scalar),
+                  !CharacterSet.punctuationCharacters.contains(scalar),
+                  !CharacterSet.symbols.contains(scalar) else {
+                continue
+            }
+            normalized.unicodeScalars.append(scalar)
+        }
+        return normalized
+    }
+}
+
 private struct RiskReportCard: View {
     let risk: RiskItem
+    var isHighlighted = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -371,12 +977,12 @@ private struct RiskReportCard: View {
         }
         .padding(14)
         .padding(.leading, 2)
-        .background(QiheColor.card)
+        .background(isHighlighted ? QiheColor.navySoft.opacity(0.72) : QiheColor.card)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(alignment: .leading) {
             Rectangle()
-                .fill(risk.riskLevel.foreground)
-                .frame(width: 3.5)
+                .fill(isHighlighted ? QiheColor.navy : risk.riskLevel.foreground)
+                .frame(width: isHighlighted ? 5 : 3.5)
         }
         .overlay(alignment: .topTrailing) {
             Text(risk.riskLevel.label)
@@ -393,8 +999,9 @@ private struct RiskReportCard: View {
         }
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(QiheColor.line, lineWidth: 1)
+                .stroke(isHighlighted ? QiheColor.navy.opacity(0.52) : QiheColor.line, lineWidth: isHighlighted ? 2 : 1)
         )
+        .animation(.easeInOut(duration: 0.2), value: isHighlighted)
     }
 }
 

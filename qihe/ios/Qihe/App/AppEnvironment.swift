@@ -15,7 +15,7 @@ enum AppEnvironment {
         return URL(string: defaultAPIBaseURLString)!
     }
 
-    static let defaultAPIBaseURLString = "http://127.0.0.1:8010"
+    static let defaultAPIBaseURLString = "http://127.0.0.1:8000"
 
     private static func url(from value: String) -> URL? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
