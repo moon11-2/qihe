@@ -17,6 +17,8 @@ codex/ios-results-history
 codex/export-word
 ```
 
+负责人开工提示词见：[role_prompts.md](role_prompts.md)。
+
 ## 分工
 
 | 角色 | 负责范围 | 主要改动路径 | 完成标准 |
@@ -116,4 +118,3 @@ codex/export-word
 - 上传类型只规划 PDF、Word/DOCX、TXT。
 - 历史只规划本地保存和清空。
 - `法条依据` 只能作为审查结果字段展示，不能变成独立检索入口。
-

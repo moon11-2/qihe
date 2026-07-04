@@ -32,6 +32,6 @@ curl http://127.0.0.1:8000/api/health
 ## 协作入口
 
 - 开发分工、原则、验收：[qihe/docs/development_framework.md](qihe/docs/development_framework.md)
+- iOS、后端、AI Prompt 负责人提示词：[qihe/docs/role_prompts.md](qihe/docs/role_prompts.md)
 - 后端说明：[qihe/backend/README.md](qihe/backend/README.md)
 - iOS 说明：[qihe/ios/README.md](qihe/ios/README.md)
-
