@@ -5,6 +5,13 @@
 .env
 .env.*
 !.env.example
+*.local
+
+# Node / web prototype
+node_modules/
+dist/
+.tmp/
+*.zip
 
 # Python
 __pycache__/
@@ -14,7 +21,6 @@ __pycache__/
 .mypy_cache/
 .venv/
 venv/
-dist/
 build/
 *.egg-info/
 
@@ -29,8 +35,11 @@ DerivedData/
 *.xcuserstate
 *.xcodeproj/project.xcworkspace/xcuserdata/
 *.xcodeproj/xcuserdata/
+ios/**/build/
+ios/**/xcuserdata/
+ios/**/*.xcuserdata/
+ios/**/*.xcuserstate
 
 # IDE
 .idea/
 .vscode/
-
