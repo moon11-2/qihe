@@ -1,20 +1,55 @@
 import Foundation
+import SwiftData
+
+@Model
+final class StoredHistoryRecord {
+    @Attribute(.unique) var id: UUID
+    var typeRaw: String
+    var title: String
+    var subtitle: String
+    var preview: String
+    var createdAt: Date
+    var updatedAt: Date
+    @Attribute(.externalStorage) var payloadData: Data
+
+    init(record: HistoryRecord, encoder: JSONEncoder) {
+        id = record.id
+        typeRaw = record.type.rawValue
+        title = record.title
+        subtitle = record.subtitle
+        preview = record.preview
+        createdAt = record.createdAt
+        updatedAt = record.updatedAt
+        payloadData = (try? encoder.encode(record)) ?? Data()
+    }
+
+    func update(with record: HistoryRecord, encoder: JSONEncoder) {
+        typeRaw = record.type.rawValue
+        title = record.title
+        subtitle = record.subtitle
+        preview = record.preview
+        createdAt = record.createdAt
+        updatedAt = record.updatedAt
+        payloadData = (try? encoder.encode(record)) ?? Data()
+    }
+
+    func decodedRecord(decoder: JSONDecoder) -> HistoryRecord? {
+        try? decoder.decode(HistoryRecord.self, from: payloadData)
+    }
+}
 
 @MainActor
 final class HistoryStore: ObservableObject {
-    @Published private(set) var records: [HistoryRecord]
+    @Published private(set) var records: [HistoryRecord] = []
 
-    private let storageKey = "qihe.local.history.records"
-    private let decoder = JSONDecoder()
-    private let encoder = JSONEncoder()
+    private let container: ModelContainer
+    private let context: ModelContext
 
-    init() {
-        if let data = UserDefaults.standard.data(forKey: storageKey),
-           let decoded = try? decoder.decode([HistoryRecord].self, from: data) {
-            records = decoded.sorted { $0.createdAt > $1.createdAt }
-        } else {
-            records = []
-        }
+    init(container: ModelContainer? = nil) {
+        let resolvedContainer = container ?? Self.makeContainer()
+        self.container = resolvedContainer
+        context = ModelContext(resolvedContainer)
+        load()
     }
 
     func list() -> [HistoryRecord] {
@@ -26,69 +61,123 @@ final class HistoryStore: ObservableObject {
     }
 
     @discardableResult
-    func addChat(messages: [ChatMessage], title: String) -> HistoryRecord {
-        save(
-            HistoryRecord(
-                id: UUID(),
-                type: .chat,
-                title: title,
-                createdAt: Date(),
-                textPreview: messages.last?.content ?? "",
-                chatMessages: messages,
-                reviewResult: nil,
-                generateResult: nil
-            )
+    func saveChat(recordId: UUID?, messages: [ChatMessage]) -> UUID {
+        let id = recordId ?? UUID()
+        let title = messages.first { $0.role == .user }?.content.truncated(to: 22) ?? "过程对话"
+        let record = HistoryRecord(
+            id: id,
+            type: .chat,
+            title: title,
+            subtitle: "本地过程",
+            preview: messages.last?.content.truncated(to: 80) ?? "",
+            createdAt: records.first { $0.id == id }?.createdAt ?? Date(),
+            updatedAt: Date(),
+            chatPayload: ChatHistoryPayload(messages: messages)
         )
+        upsert(record)
+        return id
     }
 
     @discardableResult
-    func addReview(_ result: ReviewResult) -> HistoryRecord {
-        save(
-            HistoryRecord(
-                id: UUID(),
-                type: .review,
-                title: result.title,
-                createdAt: Date(),
-                textPreview: result.source.textPreview,
-                chatMessages: [],
-                reviewResult: result,
-                generateResult: nil
+    func saveReview(
+        requestText: String,
+        attachment: UploadedFile?,
+        result: ReviewResult
+    ) -> UUID {
+        let record = HistoryRecord(
+            type: .review,
+            title: result.displayTitle,
+            subtitle: attachment?.filename ?? "文本审查",
+            preview: (result.summary ?? requestText).truncated(to: 88),
+            reviewPayload: ReviewHistoryPayload(
+                requestText: requestText,
+                attachment: attachment,
+                result: result
             )
         )
+        upsert(record)
+        return record.id
     }
 
     @discardableResult
-    func addGenerate(_ result: GenerateResult) -> HistoryRecord {
-        save(
-            HistoryRecord(
-                id: UUID(),
-                type: .generate,
-                title: result.title,
-                createdAt: Date(),
-                textPreview: result.source.textPreview,
-                chatMessages: [],
-                reviewResult: nil,
-                generateResult: result
+    func saveGenerate(
+        requestText: String,
+        attachment: UploadedFile?,
+        result: GenerateResult
+    ) -> UUID {
+        let record = HistoryRecord(
+            type: .generate,
+            title: result.displayTitle,
+            subtitle: attachment?.filename ?? "文本生成",
+            preview: (result.draft ?? requestText).truncated(to: 88),
+            generatePayload: GenerateHistoryPayload(
+                requestText: requestText,
+                attachment: attachment,
+                result: result
             )
         )
+        upsert(record)
+        return record.id
     }
 
     func clear() {
+        fetchEntities().forEach { context.delete($0) }
+        saveContext()
         records = []
-        UserDefaults.standard.removeObject(forKey: storageKey)
     }
 
-    private func save(_ record: HistoryRecord) -> HistoryRecord {
-        records.removeAll { $0.id == record.id }
-        records.insert(record, at: 0)
-        persist()
-        return record
-    }
-
-    private func persist() {
-        guard let data = try? encoder.encode(records) else {
-            return
+    private func upsert(_ record: HistoryRecord) {
+        if let entity = fetchEntities().first(where: { $0.id == record.id }) {
+            entity.update(with: record, encoder: Self.encoder)
+        } else {
+            context.insert(StoredHistoryRecord(record: record, encoder: Self.encoder))
         }
-        UserDefaults.standard.set(data, forKey: storageKey)
+        saveContext()
+        load()
     }
+
+    private func load() {
+        records = fetchEntities()
+            .compactMap { $0.decodedRecord(decoder: Self.decoder) }
+            .sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    private func fetchEntities() -> [StoredHistoryRecord] {
+        do {
+            return try context.fetch(FetchDescriptor<StoredHistoryRecord>())
+        } catch {
+            return []
+        }
+    }
+
+    private func saveContext() {
+        do {
+            try context.save()
+        } catch {
+            // Local history must not crash the app; the current UI state can still continue.
+        }
+    }
+
+    private static func makeContainer() -> ModelContainer {
+        do {
+            return try ModelContainer(for: StoredHistoryRecord.self)
+        } catch {
+            let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+            return try! ModelContainer(for: StoredHistoryRecord.self, configurations: configuration)
+        }
+    }
+
+    private static let encoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        return encoder
+    }()
+
+    private static let decoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return decoder
+    }()
 }

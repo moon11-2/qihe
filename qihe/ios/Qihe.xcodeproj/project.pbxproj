@@ -26,6 +26,8 @@
 		A00000000000000000000034 /* ReviewResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000022 /* ReviewResultView.swift */; };
 		A00000000000000000000035 /* ReviewInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000023 /* ReviewInputView.swift */; };
 		A00000000000000000000037 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000036 /* Assets.xcassets */; };
+		A00000000000000000000039 /* ShareSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000003A /* ShareSheet.swift */; };
+		A0000000000000000000003B /* SubjectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000003C /* SubjectView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -50,6 +52,8 @@
 		A00000000000000000000023 /* ReviewInputView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Review/ReviewInputView.swift; sourceTree = "<group>"; };
 		A00000000000000000000036 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Resources/Assets.xcassets; sourceTree = "<group>"; };
 		A00000000000000000000038 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Resources/Info.plist; sourceTree = "<group>"; };
+		A0000000000000000000003A /* ShareSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Results/ShareSheet.swift; sourceTree = "<group>"; };
+		A0000000000000000000003C /* SubjectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Subject/SubjectView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -99,7 +103,9 @@
 				A00000000000000000000020 /* HomeView.swift */,
 				A00000000000000000000021 /* GenerateResultView.swift */,
 				A00000000000000000000022 /* ReviewResultView.swift */,
+				A0000000000000000000003A /* ShareSheet.swift */,
 				A00000000000000000000023 /* ReviewInputView.swift */,
+				A0000000000000000000003C /* SubjectView.swift */,
 				A00000000000000000000036 /* Assets.xcassets */,
 				A00000000000000000000038 /* Info.plist */,
 			);
@@ -193,6 +199,8 @@
 				A00000000000000000000033 /* GenerateResultView.swift in Sources */,
 				A00000000000000000000034 /* ReviewResultView.swift in Sources */,
 				A00000000000000000000035 /* ReviewInputView.swift in Sources */,
+				A00000000000000000000039 /* ShareSheet.swift in Sources */,
+				A0000000000000000000003B /* SubjectView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -378,4 +386,3 @@
 	};
 	rootObject = A00000000000000000000001 /* Project object */;
 }
-

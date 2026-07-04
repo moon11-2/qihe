@@ -1,127 +1,268 @@
 import Foundation
+import UniformTypeIdentifiers
 
 struct APIClient {
     var baseURL: URL
+    var session: URLSession = .shared
 
-    static let local = APIClient(baseURL: AppEnvironment.apiBaseURL)
-
-    private var decoder: JSONDecoder {
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        return decoder
-    }
-
-    private var encoder: JSONEncoder {
-        let encoder = JSONEncoder()
-        encoder.keyEncodingStrategy = .convertToSnakeCase
-        return encoder
+    static var local: APIClient {
+        APIClient(baseURL: AppEnvironment.apiBaseURL)
     }
 
     func health() async throws -> HealthResponse {
-        let url = baseURL.appending(path: "/api/health")
-        let (data, response) = try await URLSession.shared.data(from: url)
-        try validate(response: response, data: data)
-        return try decoder.decode(HealthResponse.self, from: data)
+        try await send(path: "api/health", method: "GET")
     }
 
     func chat(messages: [ChatMessage]) async throws -> ChatResponse {
-        try await postJSON(path: "/api/chat", body: ChatRequest(messages: messages))
+        let apiMessages = messages.map { ChatAPIMessage(role: $0.role, content: $0.content) }
+        return try await send(
+            path: "api/chat",
+            method: "POST",
+            body: ChatRequest(messages: apiMessages)
+        )
     }
 
-    func runContract(_ request: ContractRunRequest) async throws -> ContractRunResponse {
-        try await postJSON(path: "/api/contracts/run", body: request)
-    }
+    func uploadFile(from fileURL: URL) async throws -> UploadedFile {
+        try QiheDocumentValidator.validate(fileURL)
 
-    func uploadFile(fileURL: URL) async throws -> FileUploadResponse {
-        let filename = fileURL.lastPathComponent
-        guard let mimeType = Self.mimeType(for: filename) else {
-            throw APIClientError.invalidFileType("仅支持 PDF、DOCX、TXT 文件")
+        let didAccess = fileURL.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess {
+                fileURL.stopAccessingSecurityScopedResource()
+            }
         }
-        let data = try Data(contentsOf: fileURL)
-        return try await uploadFile(data: data, filename: filename, mimeType: mimeType)
-    }
 
-    func uploadFile(data: Data, filename: String, mimeType: String) async throws -> FileUploadResponse {
+        let fileData = try Data(contentsOf: fileURL)
         let boundary = "Boundary-\(UUID().uuidString)"
-        let url = baseURL.appending(path: "/api/files/upload")
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: url(for: "api/files/upload"))
         request.httpMethod = "POST"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.httpBody = multipartBody(data: data, filename: filename, mimeType: mimeType, boundary: boundary)
+        request.httpBody = multipartBody(
+            boundary: boundary,
+            fieldName: "file",
+            filename: fileURL.lastPathComponent,
+            contentType: QiheDocumentValidator.contentType(for: fileURL),
+            data: fileData
+        )
 
-        let (responseData, response) = try await URLSession.shared.data(for: request)
-        try validate(response: response, data: responseData)
-        return try decoder.decode(FileUploadResponse.self, from: responseData)
+        let response: FileUploadResponse = try await data(for: request)
+        return UploadedFile(
+            fileId: response.fileId,
+            filename: response.filename,
+            contentType: response.contentType,
+            status: response.status
+        )
     }
 
-    func exportReviewWord(title: String, result: ReviewResult) async throws -> Data {
-        try await exportWord(type: "review_result", title: title, payload: result)
+    func runReview(text: String?, file: UploadedFile?) async throws -> ReviewResult {
+        let request = ContractRunRequest(
+            mode: .review,
+            text: text?.trimmedForInput.nilIfBlank,
+            fileId: file?.fileId,
+            metadata: metadata(for: file)
+        )
+        let response: ContractRunResponse<ReviewResult> = try await send(
+            path: "api/contracts/run",
+            method: "POST",
+            body: request
+        )
+        return response.result
     }
 
-    func exportGenerateWord(title: String, result: GenerateResult) async throws -> Data {
-        try await exportWord(type: "generate_result", title: title, payload: result)
+    func runGenerate(text: String?, file: UploadedFile?) async throws -> GenerateResult {
+        let request = ContractRunRequest(
+            mode: .generate,
+            text: text?.trimmedForInput.nilIfBlank,
+            fileId: file?.fileId,
+            metadata: metadata(for: file)
+        )
+        let response: ContractRunResponse<GenerateResult> = try await send(
+            path: "api/contracts/run",
+            method: "POST",
+            body: request
+        )
+        return response.result
     }
 
-    private func postJSON<RequestBody: Encodable, ResponseBody: Decodable>(
+    func exportReviewWord(title: String, payload: ReviewResult) async throws -> URL {
+        try await exportWord(type: .review, title: title, payload: payload)
+    }
+
+    func exportGenerateWord(title: String, payload: GenerateResult) async throws -> URL {
+        try await exportWord(type: .generate, title: title, payload: payload)
+    }
+
+    private func exportWord<Payload: Codable & Hashable>(
+        type: ContractMode,
+        title: String,
+        payload: Payload
+    ) async throws -> URL {
+        let requestBody = ContractExportRequest(type: type, title: title, payload: payload)
+        var request = URLRequest(url: url(for: "api/contracts/export/word"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try encoder.encode(requestBody)
+
+        let (data, response) = try await session.data(for: request)
+        try validate(response: response, data: data)
+
+        let fileURL = FileManager.default.temporaryDirectory
+            .appending(path: "\(title.sanitizedFilename).docx")
+        try data.write(to: fileURL, options: [.atomic])
+        return fileURL
+    }
+
+    private func send<Response: Decodable>(
         path: String,
-        body: RequestBody
-    ) async throws -> ResponseBody {
-        let url = baseURL.appending(path: path)
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try encoder.encode(body)
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        try validate(response: response, data: data)
-        return try decoder.decode(ResponseBody.self, from: data)
+        method: String
+    ) async throws -> Response {
+        var request = URLRequest(url: url(for: path))
+        request.httpMethod = method
+        return try await data(for: request)
     }
 
-    private func exportWord<Payload: Encodable>(type: String, title: String, payload: Payload) async throws -> Data {
-        let request = ContractExportRequest(type: type, title: title, payload: payload)
-        return try await postRaw(path: "/api/contracts/export/word", body: request)
-    }
-
-    private func postRaw<RequestBody: Encodable>(path: String, body: RequestBody) async throws -> Data {
-        let url = baseURL.appending(path: path)
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
+    private func send<Response: Decodable, Body: Encodable>(
+        path: String,
+        method: String,
+        body: Body
+    ) async throws -> Response {
+        var request = URLRequest(url: url(for: path))
+        request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try encoder.encode(body)
+        return try await data(for: request)
+    }
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+    private func data<Response: Decodable>(for request: URLRequest) async throws -> Response {
+        let (data, response) = try await session.data(for: request)
         try validate(response: response, data: data)
-        return data
+        return try decoder.decode(Response.self, from: data)
     }
 
     private func validate(response: URLResponse, data: Data) throws {
         guard let httpResponse = response as? HTTPURLResponse else {
-            throw APIClientError.invalidResponse
+            return
         }
-        guard 200..<300 ~= httpResponse.statusCode else {
-            if let backendError = try? decoder.decode(BackendErrorResponse.self, from: data) {
-                throw APIClientError.backend(
-                    code: backendError.error.code,
-                    message: backendError.error.message,
-                    statusCode: httpResponse.statusCode
-                )
-            }
-            throw APIClientError.httpStatus(httpResponse.statusCode)
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            let message = (try? decoder.decode(APIErrorResponse.self, from: data).displayString)
+                ?? String(data: data, encoding: .utf8)
+                ?? "请求失败"
+            throw APIClientError.server(statusCode: httpResponse.statusCode, detail: message)
         }
     }
 
-    private func multipartBody(data: Data, filename: String, mimeType: String, boundary: String) -> Data {
+    private func url(for path: String) -> URL {
+        baseURL.appending(path: path)
+    }
+
+    private func multipartBody(
+        boundary: String,
+        fieldName: String,
+        filename: String,
+        contentType: String,
+        data: Data
+    ) -> Data {
         var body = Data()
-        body.appendString("--\(boundary)\r\n")
-        body.appendString("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n")
-        body.appendString("Content-Type: \(mimeType)\r\n\r\n")
+        body.append("--\(boundary)\r\n")
+        body.append("Content-Disposition: form-data; name=\"\(fieldName)\"; filename=\"\(filename)\"\r\n")
+        body.append("Content-Type: \(contentType)\r\n\r\n")
         body.append(data)
-        body.appendString("\r\n--\(boundary)--\r\n")
+        body.append("\r\n--\(boundary)--\r\n")
         return body
     }
 
-    static func mimeType(for filename: String) -> String? {
-        switch (filename as NSString).pathExtension.lowercased() {
+    private func metadata(for file: UploadedFile?) -> [String: JSONValue] {
+        guard let file else {
+            return [:]
+        }
+        return [
+            "filename": .string(file.filename),
+            "content_type": .string(file.contentType ?? "application/octet-stream")
+        ]
+    }
+
+    private var encoder: JSONEncoder {
+        Self.encoder
+    }
+
+    private var decoder: JSONDecoder {
+        Self.decoder
+    }
+
+    private static let encoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        return encoder
+    }()
+
+    private static let decoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return decoder
+    }()
+}
+
+struct HealthResponse: Decodable, Hashable {
+    let status: String
+    let service: String
+}
+
+private struct FileUploadResponse: Decodable {
+    let fileId: String
+    let filename: String
+    let contentType: String?
+    let status: String
+}
+
+private struct APIErrorResponse: Decodable {
+    let error: APIErrorDetail?
+    let detail: JSONValue?
+
+    var displayString: String {
+        if let error {
+            return error.message
+        }
+        return detail?.displayString ?? "请求失败"
+    }
+}
+
+private struct APIErrorDetail: Decodable {
+    let code: String
+    let message: String
+}
+
+enum APIClientError: LocalizedError {
+    case unsupportedFileType
+    case server(statusCode: Int, detail: String)
+
+    var errorDescription: String? {
+        switch self {
+        case .unsupportedFileType:
+            return "仅支持 PDF、Word/DOCX 和 TXT 文件。"
+        case let .server(statusCode, detail):
+            return "请求失败（\(statusCode)）：\(detail)"
+        }
+    }
+}
+
+enum QiheDocumentValidator {
+    static let allowedExtensions: Set<String> = ["pdf", "docx", "txt"]
+    static let allowedTypes: [UTType] = [
+        .pdf,
+        .plainText,
+        UTType(importedAs: "org.openxmlformats.wordprocessingml.document")
+    ]
+
+    static func validate(_ url: URL) throws {
+        guard allowedExtensions.contains(url.pathExtension.lowercased()) else {
+            throw APIClientError.unsupportedFileType
+        }
+    }
+
+    static func contentType(for url: URL) -> String {
+        switch url.pathExtension.lowercased() {
         case "pdf":
             return "application/pdf"
         case "docx":
@@ -129,39 +270,24 @@ struct APIClient {
         case "txt":
             return "text/plain"
         default:
-            return nil
+            return "application/octet-stream"
         }
     }
-}
-
-enum APIClientError: LocalizedError, Equatable {
-    case backend(code: String, message: String, statusCode: Int)
-    case httpStatus(Int)
-    case invalidFileType(String)
-    case invalidResponse
-
-    var errorDescription: String? {
-        switch self {
-        case let .backend(_, message, _):
-            return message
-        case let .httpStatus(statusCode):
-            return "请求失败，状态码 \(statusCode)"
-        case let .invalidFileType(message):
-            return message
-        case .invalidResponse:
-            return "服务器响应格式不正确"
-        }
-    }
-}
-
-private struct ContractExportRequest<Payload: Encodable>: Encodable {
-    let type: String
-    let title: String
-    let payload: Payload
 }
 
 private extension Data {
-    mutating func appendString(_ value: String) {
-        append(Data(value.utf8))
+    mutating func append(_ string: String) {
+        append(Data(string.utf8))
+    }
+}
+
+private extension String {
+    var sanitizedFilename: String {
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")
+        let value = unicodeScalars
+            .map { allowed.contains($0) ? String($0) : "-" }
+            .joined()
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return value.isEmpty ? "qihe-export" : value
     }
 }

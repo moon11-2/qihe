@@ -16,6 +16,8 @@ struct RootView: View {
                         GenerateInputView(prefill: prefill)
                     case let .reviewResult(recordId):
                         ReviewResultView(recordId: recordId)
+                    case let .subject(recordId):
+                        SubjectView(recordId: recordId)
                     case let .generateResult(recordId):
                         GenerateResultView(recordId: recordId)
                     }
@@ -23,6 +25,7 @@ struct RootView: View {
                 .sheet(isPresented: $appState.isHistoryPresented) {
                     HistoryView()
                         .environmentObject(appState)
+                        .qiheHistorySheetPresentation()
                 }
         }
     }
