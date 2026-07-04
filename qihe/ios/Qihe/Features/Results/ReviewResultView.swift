@@ -403,14 +403,14 @@ struct SubjectFactsPanel: View {
 
     var body: some View {
         let facts = result.parties?.subjectFacts ?? []
-        let shouldShowEmpty = facts.isEmpty || (result.parties?.hasIncompleteCoreSubjectInfo ?? true)
+        let missingCoreFields = ContractSubjectField.coreFields.filter { field in
+            !facts.contains { $0.field == field }
+        }
 
         VStack(alignment: .leading, spacing: 12) {
-            if shouldShowEmpty {
+            if facts.isEmpty {
                 EmptySubjectBox()
-            }
-
-            if !facts.isEmpty {
+            } else {
                 FlowLayout(spacing: 8) {
                     ForEach(facts) { fact in
                         HStack(spacing: 4) {
@@ -431,8 +431,42 @@ struct SubjectFactsPanel: View {
                         )
                     }
                 }
+
+                if !missingCoreFields.isEmpty {
+                    PartialSubjectNotice(missingFields: missingCoreFields)
+                }
             }
         }
+    }
+}
+
+private struct PartialSubjectNotice: View {
+    let missingFields: [ContractSubjectField]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("部分信息待补充：\(fieldLabels)")
+                .font(QiheFont.body(size: 13, weight: .semibold))
+                .foregroundStyle(QiheColor.amber)
+
+            Text("未识别到\(fieldLabels)，请确认合同文本是否完整。")
+                .font(QiheFont.caption(size: 11.5))
+                .foregroundStyle(QiheColor.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(QiheColor.card.opacity(0.72))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(QiheColor.amber.opacity(0.32), lineWidth: 1)
+        )
+    }
+
+    private var fieldLabels: String {
+        missingFields.map(\.label).joined(separator: "、")
     }
 }
 
