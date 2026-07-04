@@ -3,6 +3,7 @@ import SwiftUI
 struct HomeView: View {
     @EnvironmentObject private var appState: AppState
     @State private var input = ""
+    @State private var healthStatus = "未连接"
 
     var body: some View {
         ZStack {
@@ -35,6 +36,9 @@ struct HomeView: View {
                 Text("AI 合同审查与生成助手")
                     .font(.system(size: 13))
                     .foregroundStyle(QiheColor.muted)
+                Text(healthStatus)
+                    .font(.system(size: 12))
+                    .foregroundStyle(healthStatus == "后端连接正常" ? QiheColor.pine : QiheColor.amber)
 
                 PaperCard {
                     TextEditor(text: $input)
@@ -58,6 +62,17 @@ struct HomeView: View {
             }
             .padding(20)
         }
+        .task {
+            await checkHealth()
+        }
+    }
+
+    private func checkHealth() async {
+        do {
+            let response = try await appState.apiClient.health()
+            healthStatus = response.status == "ok" ? "后端连接正常" : "后端状态异常"
+        } catch {
+            healthStatus = "后端未连接"
+        }
     }
 }
-

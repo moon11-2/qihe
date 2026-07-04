@@ -5,6 +5,7 @@
 - 仓库根目录：`/Users/xiejackson/Documents/网页`
 - 主分支：`main`
 - 项目目录：`qihe/`
+- 原始设计与开发文档：`qihe/docs/reference/`
 - 第一阶段目标：先保证骨架、边界、接口形状和验收方式稳定，再进入具体业务开发。
 
 建议后续开发分支命名：
@@ -16,8 +17,6 @@ codex/ios-home-review
 codex/ios-results-history
 codex/export-word
 ```
-
-负责人开工提示词见：[role_prompts.md](role_prompts.md)。
 
 ## 分工
 

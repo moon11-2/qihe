@@ -9,12 +9,13 @@ class ChatMessage(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    messages: list[ChatMessage]
+    messages: list[ChatMessage] = Field(default_factory=list)
 
 
 class ChatResponse(BaseModel):
-    type: Literal["chat", "route", "need_input", "error"]
+    type: Literal["chat", "route", "need_input"]
     intent: Literal["chat", "review", "generate", "unknown"]
     reply: str
-    options: list[Literal["review", "generate"]] = []
-
+    route: Literal["review", "generate"] | None = None
+    need_input: list[str] = Field(default_factory=list)
+    options: list[Literal["review", "generate"]] = Field(default_factory=list)

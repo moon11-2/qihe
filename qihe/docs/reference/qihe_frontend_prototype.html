@@ -1,0 +1,949 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>契合 · 前端原型 v3「文书 · 印鉴 × 法务藏青」</title>
+<style>
+  :root {
+    --ink: #1d2129;
+    --ink-soft: #4b4e55;
+    --muted: #8a8a82;
+    --paper: #f7f5f0;
+    --paper-deep: #eeece5;
+    --card: #fefdfb;
+    --line: #e5e1d8;
+    --line-strong: #d0cbbe;
+    --navy: #23405f;        /* 法务藏青：主操作 / 制度信息 */
+    --navy-deep: #182d44;
+    --navy-tint: rgba(35, 64, 95, .06);
+    --seal: #c23528;        /* 朱砂：仅印章与高风险 */
+    --seal-deep: #a02a1f;
+    --amber: #b07f1e;
+    --pine: #3d7a5c;
+    --serif: "Songti SC", "Noto Serif SC", "STSong", "SimSun", serif;
+    --sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    --r-lg: 18px;
+    --r-md: 12px;
+    --r-sm: 10px;
+    --r-xs: 7px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body { margin: 0; background: var(--paper-deep); color: var(--ink); font-family: var(--sans); }
+
+  .board { max-width: 1500px; margin: 0 auto; padding: 40px 28px 64px; }
+
+  /* ============ SF 风格图标系统 ============ */
+  .icon {
+    display: block;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    flex: none;
+  }
+  .icon.thin { stroke-width: 1.6; }
+  .ficon {
+    display: block; stroke: currentColor; fill: none;
+    stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+    color: var(--ink-soft); flex: none;
+  }
+  .ficon text { fill: currentColor; stroke: none; font-family: var(--sans); font-size: 8.5px; font-weight: 700; letter-spacing: .04em; }
+
+  /* ============ 封面 ============ */
+  .cover { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 24px; margin-bottom: 36px; }
+  .brief, .tokens { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 30px 32px; }
+  .brief { position: relative; overflow: hidden; }
+  .brand-row { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+
+  .seal-mark {
+    width: 42px; height: 42px;
+    background: linear-gradient(160deg, #ce4536, var(--seal) 55%, var(--seal-deep));
+    color: #fff; font-family: var(--serif); font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 23px; border-radius: 26%;
+    box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.5), inset 0 1px 0 rgba(255,255,255,.35), 0 2px 6px rgba(160,42,31,.25);
+    position: relative; flex: none;
+  }
+  .seal-mark::after { content: ""; position: absolute; inset: 4px; border: 1px solid rgba(255,255,255,.45); border-radius: 22%; pointer-events: none; }
+  .seal-mark.sm { width: 30px; height: 30px; font-size: 15px; }
+  .seal-mark.sm::after { inset: 3px; }
+
+  .brand-name { font-family: var(--serif); font-size: 20px; font-weight: 700; letter-spacing: .12em; }
+  .brief h1 { margin: 0 0 14px; font-family: var(--serif); font-size: 38px; line-height: 1.3; letter-spacing: .02em; }
+  .brief h1 em { font-style: normal; color: var(--navy); }
+  .brief h1 em.red { color: var(--seal); }
+  .brief p { margin: 0; max-width: 720px; color: var(--ink-soft); font-size: 15.5px; line-height: 1.9; }
+  .brief .ghost-seal {
+    position: absolute; right: -30px; bottom: -40px; width: 190px; height: 190px;
+    border: 3px solid rgba(194,53,40,.10); border-radius: 26%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--serif); font-size: 120px; font-weight: 700; color: rgba(194,53,40,.08);
+    transform: rotate(-8deg); pointer-events: none;
+  }
+
+  .tokens h2 { margin: 0 0 16px; font-family: var(--serif); font-size: 18px; letter-spacing: .1em; }
+  .token-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .token { border: 1px solid var(--line); background: #fff; border-radius: var(--r-xs); overflow: hidden; }
+  .token .swatch { height: 44px; }
+  .token .meta { padding: 8px 10px; }
+  .token .meta b { display: block; font-size: 12.5px; }
+  .token .meta span { font-size: 11px; color: var(--muted); font-family: ui-monospace, monospace; }
+  .type-note { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line-strong); font-size: 12.5px; color: var(--ink-soft); line-height: 1.8; }
+  .type-note b { font-family: var(--serif); }
+
+  /* ============ 画板网格 ============ */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 44px 30px; }
+  .frame-label { display: flex; justify-content: space-between; align-items: baseline; margin: 0 6px 12px; font-size: 13px; }
+  .frame-label b { font-family: var(--serif); letter-spacing: .06em; }
+  .frame-label b i { font-style: normal; color: var(--navy); margin-right: 6px; font-family: ui-monospace, monospace; font-size: 11px; }
+  .frame-label span { color: var(--muted); font-size: 12px; }
+
+  /* ============ iPhone 框架（标准比例 393:852 + 灵动岛 + 轻量边框） ============ */
+  .phone {
+    width: 100%;
+    max-width: 380px;
+    min-height: 824px;   /* 380 × 852/393 ≈ 824，标准 iPhone 比例 */
+    margin: 0 auto;
+    background: var(--paper);
+    border: 2px solid #22242a;
+    border-radius: 54px;  /* iPhone 屏幕圆角率 */
+    overflow: hidden;
+    box-shadow: 0 14px 34px rgba(28,30,34,.14);
+    display: flex; flex-direction: column;
+    position: relative;
+  }
+
+  /* 灵动岛 */
+  .island {
+    position: absolute; top: 12px; left: 50%;
+    transform: translateX(-50%);
+    width: 112px; height: 32px;
+    background: #0b0c0e;
+    border-radius: 18px;
+    z-index: 5;
+  }
+
+  .statusbar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 17px 32px 4px;
+    font-size: 14px; font-weight: 600;
+    color: var(--ink);
+    min-height: 52px;
+  }
+  .statusbar .right { display: flex; gap: 5px; align-items: center; }
+
+  .screen { flex: 1; display: flex; flex-direction: column; padding: 6px 20px 8px; }
+
+  /* Home 指示条 */
+  .homebar { width: 124px; height: 5px; border-radius: 3px; background: rgba(29,33,41,.22); margin: 8px auto 9px; flex: none; }
+
+  /* ---- 顶栏 ---- */
+  .topbar { display: flex; align-items: center; gap: 10px; padding: 8px 0 4px; min-height: 42px; color: var(--ink); }
+  .topbar .back {
+    width: 32px; height: 32px; border: 1px solid var(--line-strong); border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; background: #fff; color: var(--ink);
+  }
+  .topbar .title { font-family: var(--serif); font-weight: 700; font-size: 16px; letter-spacing: .1em; }
+  .topbar .sub { font-size: 11px; color: var(--muted); }
+  .topbar .spacer { flex: 1; }
+  .topbar .tool { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; color: var(--ink); }
+
+  /* ---- 通用部件 ---- */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 13px 18px; font-size: 14.5px; font-weight: 600;
+    border-radius: var(--r-sm); letter-spacing: .04em;
+  }
+  .btn.primary { background: var(--navy); color: #fff; box-shadow: 0 2px 6px rgba(35,64,95,.22); }
+  .btn.outline { background: transparent; color: var(--navy); border: 1px solid var(--navy); }
+  .btn.ghost { background: #fff; color: var(--ink-soft); border: 1px solid var(--line-strong); }
+  .btn.block { display: flex; width: 100%; }
+  .btn.sm { padding: 8px 14px; font-size: 13px; border-radius: 8px; }
+
+  .hairline { border: none; border-top: 1px solid var(--line); margin: 0; }
+
+  .perf { height: 0; border-top: 1.5px dashed var(--line-strong); position: relative; margin: 16px 0; }
+  .perf::after {
+    content: "騎縫"; position: absolute; right: 0; top: -8px;
+    font-family: var(--serif); font-size: 9px; color: var(--line-strong);
+    letter-spacing: .3em; background: var(--paper); padding-left: 6px;
+  }
+
+  .disclaimer { text-align: center; font-size: 11px; color: var(--muted); letter-spacing: .05em; }
+
+  /* 制度感：法条依据 */
+  .law-ref {
+    display: flex; align-items: flex-start; gap: 7px;
+    margin-top: 10px; padding: 9px 11px;
+    background: var(--navy-tint); border-radius: 8px;
+    font-size: 11.5px; color: var(--navy); line-height: 1.6;
+  }
+  .law-ref .icon { margin-top: 1px; }
+  .law-ref b { font-weight: 600; margin-right: 4px; }
+
+  /* 制度感：涉及条款定位 */
+  .clause-loc { font-size: 11px; color: var(--muted); margin: -2px 0 8px; letter-spacing: .03em; }
+  .clause-loc em { font-style: normal; color: var(--navy); font-weight: 600; }
+
+  /* 制度感：审查流程节点 */
+  .steps { display: flex; margin: 10px 0 2px; }
+  .step { flex: 1; text-align: center; position: relative; font-size: 10px; color: var(--muted); letter-spacing: .02em; }
+  .step + .step::before {
+    content: ""; position: absolute; top: 9px; right: 50%; width: 100%; height: 1.6px;
+    background: var(--line-strong); transform: translateX(-9px); z-index: 0;
+  }
+  .step.done + .step.done::before, .step.done + .step.cur::before { background: var(--navy); }
+  .step .dot {
+    position: relative; z-index: 1;
+    width: 19px; height: 19px; border-radius: 50%;
+    border: 1.7px solid var(--line-strong); background: #fff;
+    margin: 0 auto 6px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .step.done .dot { background: var(--navy); border-color: var(--navy); color: #fff; }
+  .step.cur .dot { border-color: var(--navy); }
+  .step.cur .dot i { width: 7px; height: 7px; border-radius: 50%; background: var(--navy); animation: none; }
+  .step.done, .step.cur { color: var(--navy); font-weight: 600; }
+
+  /* ============ 01 首页 ============ */
+  .home-hero { text-align: center; padding: 26px 0 20px; }
+  .home-hero .seal-mark { width: 64px; height: 64px; font-size: 36px; margin: 0 auto 14px; transform: rotate(-3deg); }
+  .home-hero h2 { margin: 0; font-family: var(--serif); font-size: 30px; letter-spacing: .3em; text-indent: .3em; }
+  .home-hero p { margin: 8px 0 0; font-size: 12.5px; color: var(--muted); letter-spacing: .18em; }
+
+  .doc-input {
+    background: var(--card); border: 1px solid var(--line-strong); border-radius: var(--r-md);
+    padding: 16px 14px 12px;
+    box-shadow: 0 1px 3px rgba(28,30,34,.05);
+  }
+  .doc-input .ph { color: var(--muted); font-size: 14px; line-height: 1.7; min-height: 48px; }
+  .doc-input .row { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+  .doc-input .tag { font-size: 11.5px; color: var(--ink-soft); border: 1px solid var(--line-strong); padding: 5px 11px; border-radius: 999px; background: #fff; }
+  .doc-input .actions { display: flex; gap: 8px; }
+  .icon-btn { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+  .icon-btn.plus { border: 1px solid var(--line-strong); background: #fff; color: var(--ink-soft); }
+  .icon-btn.send { background: var(--navy); color: #fff; }
+
+  .entry-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+  .entry {
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md);
+    padding: 14px; position: relative; overflow: hidden;
+  }
+  .entry::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--navy); }
+  .entry.draft::before { background: var(--ink); }
+  .entry b { display: block; font-family: var(--serif); font-size: 16px; letter-spacing: .08em; margin: 2px 0 5px; }
+  .entry span { font-size: 11.5px; color: var(--muted); line-height: 1.6; display: block; }
+  .entry .corner { position: absolute; top: 12px; right: 12px; font-family: var(--serif); font-size: 12px; color: var(--seal); }
+
+  .trust-line {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    margin-top: 12px;
+    font-size: 10.5px; color: var(--muted); letter-spacing: .06em;
+  }
+  .trust-line .icon { color: var(--navy); }
+
+  .recent-head { display: flex; justify-content: space-between; align-items: baseline; margin: 18px 0 8px; }
+  .recent-head b { font-family: var(--serif); font-size: 15px; letter-spacing: .12em; }
+  .recent-head a { font-size: 12px; color: var(--navy); text-decoration: none; }
+
+  .file-row { display: flex; align-items: center; gap: 12px; padding: 12px 2px; border-bottom: 1px solid var(--line); }
+  .file-row:last-child { border-bottom: none; }
+  .file-row .fmeta { flex: 1; min-width: 0; }
+  .file-row .fmeta b { display: block; font-size: 13.5px; margin-bottom: 3px; }
+  .file-row .fmeta span { font-size: 11px; color: var(--muted); }
+  .stamp-chip {
+    font-family: var(--serif); font-size: 10px; letter-spacing: .1em;
+    padding: 3px 7px; border: 1px solid currentColor; border-radius: var(--r-xs); flex: none;
+  }
+  .stamp-chip.done { color: var(--pine); }
+  .stamp-chip.draft { color: var(--amber); }
+
+  /* ============ 02 历史抽屉 ============ */
+  .drawer-dim { position: absolute; right: -20px; top: -6px; bottom: -8px; width: 66px; background: rgba(29,33,41,.35); }
+  .drawer { flex: 1; display: flex; flex-direction: column; }
+  .drawer-head .local { display: flex; align-items: center; gap: 4px; font-size: 10.5px; color: var(--navy); letter-spacing: .06em; margin-top: 2px; }
+  .drawer h3 { margin: 16px 0 8px; font-family: var(--serif); font-size: 21px; letter-spacing: .14em; }
+  .hist-row { display: flex; align-items: center; justify-content: space-between; padding: 13px 2px; border-bottom: 1px solid var(--line); font-size: 13.5px; }
+  .hist-row .idx { font-family: var(--serif); color: var(--muted); font-size: 11px; margin-right: 10px; }
+  .drawer-foot { margin-top: auto; display: flex; justify-content: space-between; font-size: 11.5px; color: var(--muted); padding-top: 14px; }
+  .drawer-foot .danger { color: var(--seal); }
+
+  /* ============ 03 聊天 ============ */
+  .bubble { max-width: 86%; padding: 12px 14px; font-size: 13.5px; line-height: 1.7; margin-bottom: 12px; }
+  .bubble.user { margin-left: auto; background: var(--navy); color: #fff; border-radius: 16px 16px 5px 16px; }
+  .bubble.bot { background: var(--card); border: 1px solid var(--line); border-radius: 5px 16px 16px 16px; }
+  .bubble.bot b { display: block; font-family: var(--serif); margin-bottom: 6px; font-size: 14px; }
+  .bubble .b-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .chat-input {
+    margin-top: auto; display: flex; align-items: center; gap: 8px;
+    background: #fff; border: 1px solid var(--line-strong);
+    padding: 7px 7px 7px 15px; border-radius: 999px;
+    box-shadow: 0 1px 3px rgba(28,30,34,.05);
+  }
+  .chat-input span { flex: 1; color: var(--muted); font-size: 13.5px; }
+
+  /* ============ 04/05 表单页 ============ */
+  .form-title { text-align: center; margin: 18px 0 18px; }
+  .form-title h2 { margin: 0; font-family: var(--serif); font-size: 27px; letter-spacing: .22em; text-indent: .22em; }
+  .form-title h2 em { font-style: normal; color: var(--navy); }
+  .form-title .rule { width: 44px; height: 3px; border-radius: 2px; background: var(--navy); margin: 12px auto 0; }
+  .form-title.draft h2 em { color: var(--ink); }
+  .form-title.draft .rule { background: var(--ink); }
+
+  .paste-area {
+    background: var(--card); border: 1px solid var(--line-strong); border-radius: var(--r-md);
+    min-height: 158px; padding: 14px;
+    color: var(--muted); font-size: 13.5px; line-height: 1.8;
+    background-image: repeating-linear-gradient(transparent, transparent 27px, var(--line) 27px, var(--line) 28px);
+  }
+  .upload-slot {
+    margin-top: 12px; border: 1.5px dashed var(--line-strong); border-radius: var(--r-md);
+    background: rgba(254,253,251,.7); padding: 22px 14px; text-align: center;
+  }
+  .upload-slot .icon { margin: 0 auto 8px; color: var(--navy); }
+  .upload-slot b { display: block; font-size: 14px; margin-bottom: 4px; }
+  .upload-slot span { font-size: 11.5px; color: var(--muted); }
+
+  .field-row {
+    margin-top: 12px; background: #fff; border: 1px solid var(--line); border-radius: var(--r-md);
+    padding: 13px 14px; display: flex; justify-content: space-between; align-items: center; font-size: 13px;
+  }
+  .field-row b { font-weight: 600; }
+  .field-row .val { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 4px; }
+  .opt-tag { font-size: 10px; color: var(--muted); border: 1px solid var(--line); padding: 1px 7px; border-radius: 999px; margin-left: 6px; font-weight: 400; }
+
+  /* ============ 06 审查结果 ============ */
+  .tabbar { display: flex; gap: 22px; padding: 6px 2px 0; }
+  .tabbar span { font-size: 14.5px; padding: 8px 2px 10px; color: var(--muted); font-family: var(--serif); letter-spacing: .1em; }
+  .tabbar span.on { color: var(--navy); font-weight: 700; border-bottom: 2.5px solid var(--navy); margin-bottom: -1px; }
+
+  .report-head { margin: 16px 0 12px; position: relative; }
+  .report-head h3 { margin: 0 0 6px; font-family: var(--serif); font-size: 19px; letter-spacing: .1em; }
+  .report-head p { margin: 0; font-size: 12.5px; color: var(--ink-soft); line-height: 1.8; max-width: 80%; }
+  .report-basis { display: flex; align-items: center; gap: 5px; margin-top: 7px; font-size: 11px; color: var(--navy); letter-spacing: .04em; }
+  .grade-stamp {
+    position: absolute; right: 0; top: -2px;
+    width: 58px; height: 58px;
+    border: 2.5px solid var(--amber); color: var(--amber); border-radius: 26%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-family: var(--serif); transform: rotate(7deg);
+    background: rgba(254,253,251,.6);
+  }
+  .grade-stamp b { font-size: 22px; line-height: 1; }
+  .grade-stamp span { font-size: 8.5px; letter-spacing: .2em; margin-top: 3px; }
+
+  .stat-strip { display: flex; border: 1px solid var(--line-strong); background: var(--card); border-radius: var(--r-md); overflow: hidden; }
+  .stat-strip .cell { flex: 1; text-align: center; padding: 12px 4px; }
+  .stat-strip .cell + .cell { border-left: 1px dashed var(--line-strong); }
+  .stat-strip b { display: block; font-family: var(--serif); font-size: 22px; }
+  .stat-strip span { font-size: 10.5px; color: var(--muted); letter-spacing: .08em; }
+
+  .risk-card {
+    margin-top: 14px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md);
+    padding: 14px 14px 12px 16px; position: relative; overflow: hidden;
+  }
+  .risk-card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3.5px; background: var(--seal); }
+  .risk-card.mid::before { background: var(--amber); }
+  .risk-card h4 { margin: 0 0 5px; font-size: 14.5px; font-family: var(--serif); letter-spacing: .04em; padding-right: 52px; }
+  .risk-stamp {
+    position: absolute; top: 12px; right: 12px;
+    font-family: var(--serif); font-size: 10px; letter-spacing: .12em;
+    color: var(--seal); border: 1.5px solid var(--seal);
+    padding: 3px 6px; border-radius: var(--r-xs); transform: rotate(4deg);
+  }
+  .risk-card.mid .risk-stamp { color: var(--amber); border-color: var(--amber); }
+  .risk-card .sect { font-size: 12.5px; line-height: 1.8; color: var(--ink-soft); margin-bottom: 8px; }
+  .risk-card .sect b { color: var(--ink); font-size: 12px; letter-spacing: .06em; display: block; margin-bottom: 2px; }
+  .fix-quote { border-top: 1px dashed var(--line-strong); padding-top: 10px; margin-top: 4px; font-size: 12.5px; line-height: 1.8; color: var(--ink-soft); }
+  .fix-quote .fq-label { font-family: var(--serif); color: var(--seal); font-size: 11px; letter-spacing: .1em; margin-right: 6px; border: 1px solid var(--seal); padding: 1px 6px; border-radius: 6px; }
+
+  /* ============ 07 主体空状态 ============ */
+  .sect-title { font-family: var(--serif); font-size: 15px; letter-spacing: .12em; margin: 16px 0 6px; }
+  .sect-sub { font-size: 12px; color: var(--muted); line-height: 1.7; margin-bottom: 10px; }
+  .empty-box {
+    border: 1.5px dashed var(--line-strong); border-radius: var(--r-md);
+    background: rgba(254,253,251,.6); padding: 26px 18px; text-align: center;
+    color: var(--muted); font-size: 12.5px; line-height: 1.9;
+  }
+  .empty-box .blank-seal {
+    width: 46px; height: 46px; margin: 0 auto 10px;
+    border: 2px dashed var(--line-strong); border-radius: 26%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--serif); font-size: 20px; color: var(--line-strong);
+    transform: rotate(-5deg);
+  }
+  .kv-wrap { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .kv { background: #fff; border: 1px solid var(--line); border-radius: var(--r-xs); padding: 7px 11px; font-size: 12px; }
+  .kv b { font-weight: 600; }
+  .kv span { color: var(--muted); margin-right: 4px; }
+
+  /* ============ 08 生成结果 ============ */
+  .contract-sheet {
+    background: var(--card); border: 1px solid var(--line-strong); border-radius: var(--r-md);
+    padding: 22px 18px 46px; position: relative; font-family: var(--serif);
+  }
+  .contract-sheet::before {
+    content: ""; position: absolute; inset: 6px;
+    border: 1px solid var(--line); border-radius: calc(var(--r-md) - 5px);
+    pointer-events: none;
+  }
+  .contract-sheet h3 { margin: 0 0 4px; text-align: center; font-size: 19px; letter-spacing: .28em; text-indent: .28em; font-weight: 700; }
+  .sheet-no { text-align: center; font-size: 10px; color: var(--muted); letter-spacing: .14em; margin-bottom: 14px; font-family: var(--sans); }
+  .contract-sheet p { margin: 0 0 9px; font-size: 12.5px; line-height: 1.95; color: var(--ink-soft); }
+  .contract-sheet p .blank { color: var(--seal); border-bottom: 1px solid var(--seal); padding: 0 2px; }
+  .contract-sheet .clause { font-weight: 700; color: var(--ink); }
+  .pending-seal {
+    position: absolute; right: 16px; bottom: 10px;
+    width: 54px; height: 54px;
+    border: 2.5px solid rgba(194,53,40,.5); color: rgba(194,53,40,.6);
+    border-radius: 26%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; letter-spacing: .12em;
+    transform: rotate(-7deg); text-align: center; line-height: 1.4;
+  }
+
+  .todo-card { margin-top: 14px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px; }
+  .todo-card h4 { margin: 0 0 10px; font-family: var(--serif); font-size: 14px; letter-spacing: .1em; }
+  .blank-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .blank-chip { font-size: 12px; color: var(--seal); border: 1px dashed var(--seal); padding: 4px 11px; border-radius: 999px; background: rgba(194,53,40,.04); }
+  .check-list { margin: 0; padding: 0; list-style: none; }
+  .check-list li { font-size: 12.5px; color: var(--ink-soft); line-height: 1.7; padding-left: 24px; position: relative; margin-bottom: 7px; }
+  .check-list li::before { content: ""; position: absolute; left: 0; top: 2px; width: 14px; height: 14px; border: 1.6px solid var(--muted); border-radius: 5px; }
+
+  .result-actions { display: flex; gap: 10px; margin-top: 16px; }
+  .result-actions .btn { flex: 1; padding: 12px 8px; }
+
+  /* ============ 底部说明 ============ */
+  .notes { margin-top: 44px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 26px 32px; }
+  .notes h2 { margin: 0 0 14px; font-family: var(--serif); font-size: 19px; letter-spacing: .1em; }
+  .notes h2 i { font-style: normal; color: var(--seal); margin-right: 8px; }
+  .notes ul { margin: 0; padding-left: 18px; color: var(--ink-soft); font-size: 13.5px; line-height: 2.1; }
+
+  @media (max-width: 900px) { .cover { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<!-- ============ SF 风格图标库 ============ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3.25" y="5" width="17.5" height="14" rx="4"/><path d="M9.5 5.2v13.6"/></symbol>
+    <symbol id="i-compose" viewBox="0 0 24 24"><path d="M12.5 5H7.5A3.5 3.5 0 0 0 4 8.5v8A3.5 3.5 0 0 0 7.5 20h8a3.5 3.5 0 0 0 3.5-3.5v-5"/><path d="M17.6 3.9a2.05 2.05 0 0 1 2.9 2.9l-6.8 6.8-3.4.9.9-3.4z"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M14.5 6.2 9 12l5.5 5.8"/></symbol>
+    <symbol id="i-fwd" viewBox="0 0 24 24"><path d="M9.5 6.2 15 12l-5.5 5.8"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5.6v12.8M5.6 12h12.8"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 18.6V5.8M6.6 11.2 12 5.8l5.4 5.4"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.3"/><path d="m15.6 15.6 4.6 4.6"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><path d="M6 12h.01M12 12h.01M18 12h.01" stroke-width="2.8"/></symbol>
+    <symbol id="i-updoc" viewBox="0 0 24 24"><path d="M13.2 3H8a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3h8a3 3 0 0 0 3-3V8.8z"/><path d="M13.2 3v4.3a1.7 1.7 0 0 0 1.7 1.7H19"/><path d="M12 16.8v-5M9.8 13.9 12 11.7l2.2 2.2"/></symbol>
+    <symbol id="i-doc" viewBox="0 0 36 42"><path d="M9 3h12.5L30 11.5V35a3.5 3.5 0 0 1-3.5 3.5h-17A3.5 3.5 0 0 1 6 35V6.5A3.5 3.5 0 0 1 9.5 3z"/><path d="M21.5 3v6.3a2.2 2.2 0 0 0 2.2 2.2H30"/></symbol>
+    <!-- text.book.closed（法条依据） -->
+    <symbol id="i-law" viewBox="0 0 24 24"><path d="M5 6.5A2.5 2.5 0 0 1 7.5 4H19v13.5H7.5A2.5 2.5 0 0 0 5 20z"/><path d="M5 17.5V20"/><path d="M9.5 8.5h5.5M9.5 11.5h3.5"/></symbol>
+    <!-- checkmark.shield（可信/本地） -->
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3.5 19 6v5.3c0 4.6-3 7.7-7 9.2-4-1.5-7-4.6-7-9.2V6z"/><path d="m9 11.8 2.1 2.1 3.9-4"/></symbol>
+    <!-- checkmark -->
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m6 12.4 4 4L18 8" stroke-width="2.4"/></symbol>
+    <symbol id="i-cell" viewBox="0 0 24 24"><path d="M4.5 17.5v-2M9 17.5v-4.5M13.5 17.5v-7M18 17.5V8" stroke-width="2.2"/></symbol>
+    <symbol id="i-batt" viewBox="0 0 30 24"><rect x="2" y="7.5" width="21" height="9" rx="3"/><rect x="4.2" y="9.7" width="12" height="4.6" rx="1.6" fill="currentColor" stroke="none"/><path d="M25.5 10.6v2.8" stroke-width="2"/></symbol>
+  </defs>
+</svg>
+
+<div class="board">
+
+  <!-- ======== 封面 ======== -->
+  <div class="cover">
+    <div class="brief">
+      <div class="brand-row">
+        <div class="seal-mark">契</div>
+        <div class="brand-name">契合</div>
+      </div>
+      <h1>v3：文书 · <em class="red">印鉴</em> × <em>法务藏青</em></h1>
+      <p>
+        在 v2 基础上完成三件事：① 机身改为标准 iPhone 比例（393:852）、灵动岛与 Home 指示条，
+        边框保持轻量；② 引入法务藏青 #23405F 承担全部主操作与制度信息——主按钮、Tab、
+        法条依据、流程节点统一走藏青，朱砂退守到印章与高风险，红蓝对比形成"公章 × 公文"的可信气质；
+        ③ 制度感细节落地：风险卡标注涉及条款与法条依据，审查过程展示四步流程节点，
+        草案页增加文书编号行。底色收敛为克制的暖白，印章与宋体骨架保留。
+      </p>
+      <div class="ghost-seal">契</div>
+    </div>
+    <div class="tokens">
+      <h2>视觉定稿</h2>
+      <div class="token-list">
+        <div class="token"><div class="swatch" style="background:#1d2129"></div><div class="meta"><b>墨 Ink</b><span>#1D2129</span></div></div>
+        <div class="token"><div class="swatch" style="background:#23405f"></div><div class="meta"><b>法务藏青</b><span>#23405F</span></div></div>
+        <div class="token"><div class="swatch" style="background:#c23528"></div><div class="meta"><b>朱砂 Seal</b><span>#C23528</span></div></div>
+        <div class="token"><div class="swatch" style="background:#f7f5f0"></div><div class="meta"><b>纸 Paper</b><span>#F7F5F0</span></div></div>
+        <div class="token"><div class="swatch" style="background:#b07f1e"></div><div class="meta"><b>赭黄 中风险</b><span>#B07F1E</span></div></div>
+        <div class="token"><div class="swatch" style="background:#3d7a5c"></div><div class="meta"><b>松绿 通过</b><span>#3D7A5C</span></div></div>
+      </div>
+      <div class="type-note">
+        <b>色彩分工：</b>藏青 = 操作与制度（按钮 / Tab / 法条 / 流程），朱砂 = 印章与高风险，
+        两者不混用。<b>图标：</b>SF Symbols 规范描边。<b>字体：</b>标题与文书宋体，UI 层无衬线。
+      </div>
+    </div>
+  </div>
+
+  <!-- ======== 画板 ======== -->
+  <div class="grid">
+
+    <!-- 01 首页 -->
+    <div>
+      <div class="frame-label"><b><i>01</i>首页</b><span>核心入口 + 最近 3 条</span></div>
+      <div class="phone">
+        <div class="island"></div>
+        <div class="statusbar">
+          <span>18:22</span>
+          <span class="right">
+            <svg class="icon thin" width="16" height="16"><use href="#i-cell"/></svg>
+            <svg class="icon thin" width="22" height="16" viewBox="0 0 30 24"><use href="#i-batt"/></svg>
+          </span>
+        </div>
+        <div class="screen">
+          <div class="topbar">
+            <div class="tool"><svg class="icon" width="21" height="21" viewBox="0 0 24 24"><use href="#i-sidebar"/></svg></div>
+            <div class="spacer"></div>
+            <div class="tool"><svg class="icon" width="20" height="20" viewBox="0 0 24 24"><use href="#i-compose"/></svg></div>
+          </div>
+
+          <div class="home-hero">
+            <div class="seal-mark">契</div>
+            <h2>契合</h2>
+            <p>AI 合同审查与生成助手</p>
+          </div>
+
+          <div class="doc-input">
+            <div class="ph">输入合同内容，或描述你想生成的合同……</div>
+            <div class="row">
+              <span class="tag">合同助手</span>
+              <div class="actions">
+                <div class="icon-btn plus"><svg class="icon" width="16" height="16" viewBox="0 0 24 24"><use href="#i-plus"/></svg></div>
+                <div class="icon-btn send"><svg class="icon" width="16" height="16" viewBox="0 0 24 24"><use href="#i-send"/></svg></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="entry-pair">
+            <div class="entry review">
+              <span class="corner">審</span>
+              <b>合同审查</b>
+              <span>粘贴文本或上传<br/>PDF / Word / TXT</span>
+            </div>
+            <div class="entry draft">
+              <span class="corner">擬</span>
+              <b>合同生成</b>
+              <span>描述需求<br/>生成合同草案</span>
+            </div>
+          </div>
+
+          <div class="trust-line">
+            <svg class="icon" width="13" height="13" viewBox="0 0 24 24"><use href="#i-shield"/></svg>
+            逐条审查 · 标注法条依据 · 历史仅本地保存
+          </div>
+
+          <div class="recent-head"><b>最近记录</b><a href="#">展开</a></div>
+          <div class="file-row">
+            <svg class="ficon" width="30" height="35" viewBox="0 0 36 42"><use href="#i-doc"/><text x="17" y="33" text-anchor="middle">PDF</text></svg>
+            <div class="fmeta"><b>房屋租赁合同审查</b><span>2026-07-03</span></div>
+            <span class="stamp-chip done">審畢</span>
+          </div>
+          <div class="file-row">
+            <svg class="ficon" width="30" height="35" viewBox="0 0 36 42"><use href="#i-doc"/><text x="17" y="33" text-anchor="middle">DOC</text></svg>
+            <div class="fmeta"><b>通用民事合同草案</b><span>2026-07-03</span></div>
+            <span class="stamp-chip draft">草案</span>
+          </div>
+          <div class="file-row">
+            <svg class="ficon" width="30" height="35" viewBox="0 0 36 42"><use href="#i-doc"/><text x="17" y="33" text-anchor="middle">TXT</text></svg>
+            <div class="fmeta"><b>采购合同风险检查</b><span>2026-07-02</span></div>
+            <span class="stamp-chip done">審畢</span>
+          </div>
+          <div class="homebar"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 02 历史抽屉 -->
+    <div>
+      <div class="frame-label"><b><i>02</i>历史抽屉</b><span>仅本地历史</span></div>
+      <div class="phone">
+        <div class="island"></div>
+        <div class="statusbar">
+          <span>18:22</span>
+          <span class="right">
+            <svg class="icon thin" width="16" height="16"><use href="#i-cell"/></svg>
+            <svg class="icon thin" width="22" height="16" viewBox="0 0 30 24"><use href="#i-batt"/></svg>
+          </span>
+        </div>
+        <div class="screen" style="position:relative; overflow:hidden;">
+          <div class="drawer-dim"></div>
+          <div class="drawer">
+            <div class="drawer-head">
+              <div style="display:flex; align-items:center; justify-content:space-between; padding-right:72px;">
+                <div style="display:flex; align-items:center; gap:9px;">
+                  <div class="seal-mark sm">契</div>
+                  <div>
+                    <div style="font-family:var(--serif); font-weight:700; letter-spacing:.1em;">契合</div>
+                    <div class="local">
+                      <svg class="icon" width="11" height="11" viewBox="0 0 24 24"><use href="#i-shield"/></svg>
+                      本地保存 · 不上传
+                    </div>
+                  </div>
+                </div>
+                <svg class="icon" width="19" height="19" viewBox="0 0 24 24"><use href="#i-search"/></svg>
+              </div>
+              <h3>历史对话</h3>
+            </div>
+            <div class="hist-row"><span><span class="idx">壹</span>房屋租赁合同审查</span><svg class="icon" width="18" height="18" viewBox="0 0 24 24" style="color:var(--line-strong)"><use href="#i-more"/></svg></div>
+            <div class="hist-row"><span><span class="idx">貳</span>帮我生成合同</span><svg class="icon" width="18" height="18" viewBox="0 0 24 24" style="color:var(--line-strong)"><use href="#i-more"/></svg></div>
+            <div class="hist-row"><span><span class="idx">叁</span>我要审查一个文档</span><svg class="icon" width="18" height="18" viewBox="0 0 24 24" style="color:var(--line-strong)"><use href="#i-more"/></svg></div>
+            <div class="hist-row"><span><span class="idx">肆</span>采购合同风险检查</span><svg class="icon" width="18" height="18" viewBox="0 0 24 24" style="color:var(--line-strong)"><use href="#i-more"/></svg></div>
+            <div class="hist-row"><span><span class="idx">伍</span>我要写一份租房合同</span><svg class="icon" width="18" height="18" viewBox="0 0 24 24" style="color:var(--line-strong)"><use href="#i-more"/></svg></div>
+            <div class="hist-row"><span><span class="idx">陸</span>通用民事合同草案</span><svg class="icon" width="18" height="18" viewBox="0 0 24 24" style="color:var(--line-strong)"><use href="#i-more"/></svg></div>
+            <div class="drawer-foot" style="padding-right:72px;">
+              <span>已显示全部内容</span>
+              <span class="danger">清空历史</span>
+            </div>
+          </div>
+          <div class="homebar"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 03 聊天 / 过程 -->
+    <div>
+      <div class="frame-label"><b><i>03</i>聊天 / 过程</b><span>自由聊天 + 审查流程节点</span></div>
+      <div class="phone">
+        <div class="island"></div>
+        <div class="statusbar">
+          <span>18:22</span>
+          <span class="right">
+            <svg class="icon thin" width="16" height="16"><use href="#i-cell"/></svg>
+            <svg class="icon thin" width="22" height="16" viewBox="0 0 30 24"><use href="#i-batt"/></svg>
+          </span>
+        </div>
+        <div class="screen">
+          <div class="topbar">
+            <div class="back"><svg class="icon" width="17" height="17" viewBox="0 0 24 24"><use href="#i-back"/></svg></div>
+            <div class="seal-mark sm">契</div>
+            <div>
+              <div class="title" style="font-size:14px;">契合</div>
+              <div class="sub">AI 合同审查与生成助手</div>
+            </div>
+            <div class="spacer"></div>
+            <div class="tool"><svg class="icon" width="19" height="19" viewBox="0 0 24 24"><use href="#i-compose"/></svg></div>
+          </div>
+          <div class="perf"></div>
+
+          <div class="bubble user">帮我生成合同</div>
+          <div class="bubble bot">
+            <b>我会按合同生成来处理</b>
+            你可以补充合同类型、双方身份、金额、期限和特殊约定。
+            <div class="b-actions">
+              <span class="btn primary sm">进入生成</span>
+              <span class="btn ghost sm">改为审查</span>
+            </div>
+          </div>
+          <div class="bubble user">不确定，我是要看看已有合同</div>
+          <div class="bubble bot">
+            <b>请选择处理方式</b>
+            如果已有合同文件或正文，选择合同审查；如果要从需求起草，选择合同生成。
+            <div class="b-actions">
+              <span class="btn primary sm">合同审查</span>
+              <span class="btn outline sm">合同生成</span>
+            </div>
+          </div>
+
+          <div class="bubble bot" style="max-width:100%;">
+            <b>正在审查</b>
+            <div class="steps">
+              <div class="step done"><div class="dot"><svg class="icon" width="11" height="11" viewBox="0 0 24 24"><use href="#i-check"/></svg></div>解析文本</div>
+              <div class="step done"><div class="dot"><svg class="icon" width="11" height="11" viewBox="0 0 24 24"><use href="#i-check"/></svg></div>识别主体</div>
+              <div class="step cur"><div class="dot"><i></i></div>条款比对</div>
+              <div class="step"><div class="dot"></div>出具报告</div>
+            </div>
+          </div>
+
+          <div class="chat-input">
+            <span>请输入问题</span>
+            <div class="icon-btn plus"><svg class="icon" width="16" height="16" viewBox="0 0 24 24"><use href="#i-plus"/></svg></div>
+            <div class="icon-btn send"><svg class="icon" width="16" height="16" viewBox="0 0 24 24"><use href="#i-send"/></svg></div>
+          </div>
+          <div class="homebar"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 04 合同审查 -->
+    <div>
+      <div class="frame-label"><b><i>04</i>合同审查</b><span>文本 + 文件上传</span></div>
+      <div class="phone">
+        <div class="island"></div>
+        <div class="statusbar">
+          <span>18:22</span>
+          <span class="right">
+            <svg class="icon thin" width="16" height="16"><use href="#i-cell"/></svg>
+            <svg class="icon thin" width="22" height="16" viewBox="0 0 30 24"><use href="#i-batt"/></svg>
+          </span>
+        </div>
+        <div class="screen">
+          <div class="topbar"><div class="back"><svg class="icon" width="17" height="17" viewBox="0 0 24 24"><use href="#i-back"/></svg></div></div>
+
+          <div class="form-title">
+            <h2>合同<em>审查</em></h2>
+            <div class="rule"></div>
+          </div>
+
+          <div class="paste-area">粘贴合同文本</div>
+
+          <div class="upload-slot">
+            <svg class="icon" width="30" height="30" viewBox="0 0 24 24"><use href="#i-updoc"/></svg>
+            <b>上传 PDF / Word / TXT</b>
+            <span>20MB 以内</span>
+          </div>
+
+          <div class="field-row">
+            <b>更多信息<span class="opt-tag">可选</span></b>
+            <span class="val">合同类型、我的立场、关注重点
+              <svg class="icon" width="13" height="13" viewBox="0 0 24 24"><use href="#i-fwd"/></svg>
+            </span>
+          </div>
+
+          <div style="margin-top:auto;">
+            <div class="btn primary block">开始审查</div>
+            <div class="disclaimer" style="margin-top:12px;">AI 辅助审查，不构成法律意见</div>
+          </div>
+          <div class="homebar"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 05 合同生成 -->
+    <div>
+      <div class="frame-label"><b><i>05</i>合同生成</b><span>需求输入 + 可选补充</span></div>
+      <div class="phone">
+        <div class="island"></div>
+        <div class="statusbar">
+          <span>18:22</span>
+          <span class="right">
+            <svg class="icon thin" width="16" height="16"><use href="#i-cell"/></svg>
+            <svg class="icon thin" width="22" height="16" viewBox="0 0 30 24"><use href="#i-batt"/></svg>
+          </span>
+        </div>
+        <div class="screen">
+          <div class="topbar"><div class="back"><svg class="icon" width="17" height="17" viewBox="0 0 24 24"><use href="#i-back"/></svg></div></div>
+
+          <div class="form-title draft">
+            <h2>合同<em>生成</em></h2>
+            <div class="rule"></div>
+          </div>
+
+          <div class="paste-area">描述生成需求，例如：我想写一份房屋租赁合同，租期一年，月租 5000 元，押一付三。</div>
+
+          <div class="field-row">
+            <b>补充要求<span class="opt-tag">可选</span></b>
+            <span class="val">合同类型、我的身份、特殊约定
+              <svg class="icon" width="13" height="13" viewBox="0 0 24 24"><use href="#i-fwd"/></svg>
+            </span>
+          </div>
+
+          <div style="margin-top:auto;">
+            <div class="btn primary block">生成合同</div>
+            <div class="disclaimer" style="margin-top:12px;">AI 辅助起草，不构成法律意见</div>
+          </div>
+          <div class="homebar"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 06 审查结果 -->
+    <div>
+      <div class="frame-label"><b><i>06</i>审查结果</b><span>原文 / 风险 / 主体 · 含法条依据</span></div>
+      <div class="phone">
+        <div class="island"></div>
+        <div class="statusbar">
+          <span>18:22</span>
+          <span class="right">
+            <svg class="icon thin" width="16" height="16"><use href="#i-cell"/></svg>
+            <svg class="icon thin" width="22" height="16" viewBox="0 0 30 24"><use href="#i-batt"/></svg>
+          </span>
+        </div>
+        <div class="screen">
+          <div class="topbar" style="gap:16px;">
+            <div class="back"><svg class="icon" width="17" height="17" viewBox="0 0 24 24"><use href="#i-back"/></svg></div>
+            <div class="tabbar" style="flex:1;">
+              <span>原文</span><span class="on">风险</span><span>主体</span>
+            </div>
+          </div>
+          <hr class="hairline" />
+
+          <div class="report-head">
+            <h3>合同审查报告</h3>
+            <p>这份合同存在 3 个重点风险，建议优先处理高风险的付款与验收条款。</p>
+            <div class="report-basis">
+              <svg class="icon" width="13" height="13" viewBox="0 0 24 24"><use href="#i-law"/></svg>
+              审查依据：中国大陆现行法律
+            </div>
+            <div class="grade-stamp"><b>C</b><span>中等风险</span></div>
+          </div>
+
+          <div class="stat-strip">
+            <div class="cell"><b>3</b><span>风险数量</span></div>
+            <div class="cell"><b>76</b><span>综合评分</span></div>
+            <div class="cell"><b style="color:var(--amber)">C</b><span>风险等级</span></div>
+          </div>
+
+          <div class="risk-card">
+            <span class="risk-stamp">高風險</span>
+            <h4>付款与验收标准绑定不清</h4>
+            <div class="clause-loc">涉及条款 · <em>第四条 付款方式</em> / <em>第六条 验收</em></div>
+            <div class="sect"><b>风险分析</b>尾款支付与验收标准没有形成明确前置条件，可能导致付款争议或质量异议难以处理。</div>
+            <div class="sect"><b>修订建议</b>补充验收标准、异议期限和付款前置条件，明确双方确认方式。</div>
+            <div class="fix-quote">
+              <span class="fq-label">修改</span>乙方完成交付后，甲方应在约定期限内验收；经甲方书面确认验收合格后，双方共同签署验收单，甲方再支付对应尾款。
+            </div>
+            <div class="law-ref">
+              <svg class="icon" width="14" height="14" viewBox="0 0 24 24"><use href="#i-law"/></svg>
+              <div><b>法条依据</b>《民法典》第五百零九条（全面履行）· 第六百二十一条（检验与异议期）</div>
+            </div>
+          </div>
+
+          <div class="risk-card mid">
+            <span class="risk-stamp">中風險</span>
+            <h4>违约责任约定偏笼统</h4>
+            <div class="clause-loc">涉及条款 · <em>第九条 违约责任</em></div>
+            <div class="sect"><b>修订建议</b>建议明确逾期交付、逾期付款和解除条件，减少后续解释空间。</div>
+            <div class="law-ref">
+              <svg class="icon" width="14" height="14" viewBox="0 0 24 24"><use href="#i-law"/></svg>
+              <div><b>法条依据</b>《民法典》第五百七十七条（违约责任）</div>
+            </div>
+          </div>
+          <div class="homebar"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 07 主体空状态 -->
+    <div>
+      <div class="frame-label"><b><i>07</i>主体页空状态</b><span>识别不到时</span></div>
+      <div class="phone">
+        <div class="island"></div>
+        <div class="statusbar">
+          <span>18:22</span>
+          <span class="right">
+            <svg class="icon thin" width="16" height="16"><use href="#i-cell"/></svg>
+            <svg class="icon thin" width="22" height="16" viewBox="0 0 30 24"><use href="#i-batt"/></svg>
+          </span>
+        </div>
+        <div class="screen">
+          <div class="topbar" style="gap:16px;">
+            <div class="back"><svg class="icon" width="17" height="17" viewBox="0 0 24 24"><use href="#i-back"/></svg></div>
+            <div class="tabbar" style="flex:1;">
+              <span>原文</span><span>风险</span><span class="on">主体</span>
+            </div>
+          </div>
+          <hr class="hairline" />
+
+          <div class="sect-title">识别信息</div>
+          <div class="sect-sub">展示甲方、乙方、金额、期限等合同要素。识别不到时使用空状态，不展示虚假内容。</div>
+
+          <div class="empty-box">
+            <div class="blank-seal">空</div>
+            未识别到乙方、金额或期限等信息，<br/>请确认合同文本是否完整。
+          </div>
+
+          <div class="perf"></div>
+
+          <div class="sect-title" style="margin-top:2px;">已识别</div>
+          <div class="kv-wrap">
+            <div class="kv"><span>甲方</span><b>上海某某公司</b></div>
+            <div class="kv"><span>合同类型</span><b>房屋租赁合同</b></div>
+            <div class="kv"><span>司法辖区</span><b>中国大陆</b></div>
+          </div>
+          <div class="homebar" style="margin-top:auto;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 08 生成结果 -->
+    <div>
+      <div class="frame-label"><b><i>08</i>生成结果</b><span>草案 + 待补充 + 清单</span></div>
+      <div class="phone">
+        <div class="island"></div>
+        <div class="statusbar">
+          <span>18:22</span>
+          <span class="right">
+            <svg class="icon thin" width="16" height="16"><use href="#i-cell"/></svg>
+            <svg class="icon thin" width="22" height="16" viewBox="0 0 30 24"><use href="#i-batt"/></svg>
+          </span>
+        </div>
+        <div class="screen">
+          <div class="topbar">
+            <div class="back"><svg class="icon" width="17" height="17" viewBox="0 0 24 24"><use href="#i-back"/></svg></div>
+            <div class="seal-mark sm">契</div>
+            <div>
+              <div class="title" style="font-size:14px;">合同草案</div>
+              <div class="sub">房屋租赁合同</div>
+            </div>
+          </div>
+
+          <div class="contract-sheet">
+            <h3>房屋租赁合同</h3>
+            <div class="sheet-no">草案 · 契合起草 · 参照《民法典》合同编体例</div>
+            <p>甲方（出租方）：<span class="blank">[甲方完整名称]</span></p>
+            <p>乙方（承租方）：<span class="blank">[乙方完整名称]</span></p>
+            <p><span class="clause">第一条</span>　房屋基本情况：甲方将位于 <span class="blank">[房屋地址]</span> 的房屋出租给乙方使用。</p>
+            <p><span class="clause">第二条</span>　租赁期限：自 <span class="blank">[起始日期]</span> 起至 <span class="blank">[结束日期]</span> 止。</p>
+            <p><span class="clause">第三条</span>　租金及押金：租金为每月 <span class="blank">[租金金额]</span> 元，押金为 <span class="blank">[押金金额]</span> 元。</p>
+            <div class="pending-seal">待簽<br/>用印</div>
+          </div>
+
+          <div class="todo-card">
+            <h4>待补充信息</h4>
+            <div class="blank-chips">
+              <span class="blank-chip">甲方完整名称</span>
+              <span class="blank-chip">租赁期限</span>
+              <span class="blank-chip">租金金额</span>
+            </div>
+          </div>
+
+          <div class="todo-card">
+            <h4>签署前清单</h4>
+            <ul class="check-list">
+              <li>确认双方主体信息</li>
+              <li>确认租金和押金</li>
+              <li>确认房屋交付、维修和违约责任</li>
+            </ul>
+          </div>
+
+          <div class="result-actions">
+            <span class="btn ghost">复制全文</span>
+            <span class="btn ghost">导出</span>
+            <span class="btn primary">继续修改</span>
+          </div>
+          <div class="disclaimer" style="margin-top:12px;">AI 辅助起草，不构成法律意见</div>
+          <div class="homebar"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ======== 底部说明 ======== -->
+  <div class="notes">
+    <h2><i>附</i>v3 改版说明</h2>
+    <ul>
+      <li>机身：标准 iPhone 比例（393:852，约 380×824 展示尺寸）、54pt 屏幕圆角、灵动岛、Home 指示条；边框仅 2pt 深色描边，保持展示板轻量感。</li>
+      <li>法务藏青 #23405F 承担全部"操作与制度"角色：主按钮、发送键、Tab 高亮、法条依据、流程节点、信任说明；朱砂只保留印章与高风险，两色不混用。</li>
+      <li>制度感三件套落地：① 风险卡标注"涉及条款 · 第 X 条"，与原文条款编号对应；② 每条风险附"法条依据"引用行（藏青底注样式）；③ 审查过程改为四步流程节点：解析文本 → 识别主体 → 条款比对 → 出具报告。</li>
+      <li>首页入口下新增一行信任说明（逐条审查 · 标注法条依据 · 历史仅本地保存），草案页标题下增加体例注记行。原型中的法条条号为示意占位，接入后端后按实际引用输出。</li>
+      <li>古风浓度收敛：底色从宣纸黄调收为克制暖白 #F7F5F0，印章、宋体、骑缝线、壹貳叁编号保留；信息架构与功能边界与前版完全一致。</li>
+    </ul>
+  </div>
+
+</div>
+</body>
+</html>

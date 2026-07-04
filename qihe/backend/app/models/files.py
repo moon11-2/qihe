@@ -6,4 +6,5 @@ class FileUploadResponse(BaseModel):
     filename: str
     content_type: str | None
     status: str
-
+    text_preview: str
+    char_count: int

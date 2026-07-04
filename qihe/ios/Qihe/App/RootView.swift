@@ -8,8 +8,8 @@ struct RootView: View {
             HomeView()
                 .navigationDestination(for: AppRoute.self) { route in
                     switch route {
-                    case .chat:
-                        ChatView()
+                    case let .chat(localRecordId):
+                        ChatView(localRecordId: localRecordId)
                     case let .review(prefill):
                         ReviewInputView(prefill: prefill)
                     case let .generate(prefill):
@@ -22,8 +22,8 @@ struct RootView: View {
                 }
                 .sheet(isPresented: $appState.isHistoryPresented) {
                     HistoryView()
+                        .environmentObject(appState)
                 }
         }
     }
 }
-
