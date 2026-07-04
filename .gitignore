@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.DS_Store
+*.local
+.tmp/
+*.zip
+ios/**/build/
+ios/**/xcuserdata/
+ios/**/*.xcuserdata/
+ios/**/*.xcuserstate

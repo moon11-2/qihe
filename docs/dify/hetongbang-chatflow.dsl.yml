@@ -1,0 +1,1324 @@
+app:
+  description: "合同帮V1：面向移动端 APP 的专业合同审查与合同生成 Chatflow。"
+  icon: "📄"
+  icon_background: "#EAF3FF"
+  icon_type: emoji
+  mode: advanced-chat
+  name: 合同帮V1
+  use_icon_as_answer_icon: false
+dependencies: []
+kind: app
+version: 0.3.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      enabled: true
+      allowed_file_extensions:
+        - .pdf
+        - .docx
+        - .txt
+        - .md
+      allowed_file_types:
+        - document
+      allowed_file_upload_methods:
+        - local_file
+      number_limits: 3
+      image:
+        enabled: false
+    opening_statement: "你好，我是合同帮V1。请选择审查合同或生成合同，并提供合同文本、文件或生成需求。"
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ""
+      voice: ""
+  graph:
+    edges:
+      - id: edge_start_has_file
+        source: start
+        sourceHandle: source
+        target: has_file
+        targetHandle: target
+        type: custom
+        data:
+          isInIteration: false
+          sourceType: start
+          targetType: if-else
+      - id: edge_has_file_doc
+        source: has_file
+        sourceHandle: file_uploaded
+        target: doc_extract
+        targetHandle: target
+        type: custom
+        data:
+          isInIteration: false
+          sourceType: if-else
+          targetType: document-extractor
+      - id: edge_has_file_text
+        source: has_file
+        sourceHandle: 'false'
+        target: merge_text_only
+        targetHandle: target
+        type: custom
+        data:
+          isInIteration: false
+          sourceType: if-else
+          targetType: code
+      - id: edge_doc_merge
+        source: doc_extract
+        sourceHandle: source
+        target: merge_file_text
+        targetHandle: target
+        type: custom
+        data:
+          isInIteration: false
+          sourceType: document-extractor
+          targetType: code
+      - id: edge_merge_file_agg
+        source: merge_file_text
+        sourceHandle: source
+        target: merged_contract_text
+        targetHandle: target
+        type: custom
+        data:
+          isInIteration: false
+          sourceType: code
+          targetType: variable-aggregator
+      - id: edge_merge_text_agg
+        source: merge_text_only
+        sourceHandle: source
+        target: merged_contract_text
+        targetHandle: target
+        type: custom
+        data:
+          isInIteration: false
+          sourceType: code
+          targetType: variable-aggregator
+      - id: edge_agg_elements
+        source: merged_contract_text
+        sourceHandle: source
+        target: element_extract
+        targetHandle: target
+        type: custom
+        data:
+          isInIteration: false
+          sourceType: variable-aggregator
+          targetType: parameter-extractor
+      - id: edge_elements_context
+        source: element_extract
+        sourceHandle: source
+        target: app_context
+        targetHandle: target
+        type: custom
+        data:
+          isInIteration: false
+          sourceType: parameter-extractor
+          targetType: template-transform
+      - id: edge_context_classifier
+        source: app_context
+        sourceHandle: source
+        target: intent_classifier
+        targetHandle: target
+        type: custom
+        data:
+          isInIteration: false
+          sourceType: template-transform
+          targetType: question-classifier
+      - id: edge_classifier_review
+        source: intent_classifier
+        sourceHandle: review
+        target: review_llm
+        targetHandle: target
+        type: custom
+        data:
+          isInIteration: false
+          sourceType: question-classifier
+          targetType: llm
+      - id: edge_classifier_generate
+        source: intent_classifier
+        sourceHandle: generate
+        target: generate_llm
+        targetHandle: target
+        type: custom
+        data:
+          isInIteration: false
+          sourceType: question-classifier
+          targetType: llm
+      - id: edge_classifier_consult
+        source: intent_classifier
+        sourceHandle: consult
+        target: consult_llm
+        targetHandle: target
+        type: custom
+        data:
+          isInIteration: false
+          sourceType: question-classifier
+          targetType: llm
+      - id: edge_review_clean
+        source: review_llm
+        sourceHandle: source
+        target: review_quality_gate
+        targetHandle: target
+        type: custom
+        data:
+          isInIteration: false
+          sourceType: llm
+          targetType: code
+      - id: edge_review_answer
+        source: review_quality_gate
+        sourceHandle: source
+        target: review_answer
+        targetHandle: target
+        type: custom
+        data:
+          isInIteration: false
+          sourceType: code
+          targetType: answer
+      - id: edge_generate_clean
+        source: generate_llm
+        sourceHandle: source
+        target: generate_quality_gate
+        targetHandle: target
+        type: custom
+        data:
+          isInIteration: false
+          sourceType: llm
+          targetType: code
+      - id: edge_generate_answer
+        source: generate_quality_gate
+        sourceHandle: source
+        target: generate_answer
+        targetHandle: target
+        type: custom
+        data:
+          isInIteration: false
+          sourceType: code
+          targetType: answer
+      - id: edge_consult_clean
+        source: consult_llm
+        sourceHandle: source
+        target: consult_quality_gate
+        targetHandle: target
+        type: custom
+        data:
+          isInIteration: false
+          sourceType: llm
+          targetType: code
+      - id: edge_consult_answer
+        source: consult_quality_gate
+        sourceHandle: source
+        target: consult_answer
+        targetHandle: target
+        type: custom
+        data:
+          isInIteration: false
+          sourceType: code
+          targetType: answer
+    nodes:
+      - id: start
+        type: custom
+        position:
+          x: 80
+          y: 360
+        data:
+          title: 用户输入
+          type: start
+          desc: "接收合同帮 APP 的审查/生成字段。"
+          selected: false
+          variables:
+            - variable: mode
+              label: 功能模式
+              type: select
+              required: true
+              default: auto
+              options:
+                - auto
+                - review
+                - generate
+                - consult
+              max_length: 24
+            - variable: contract_file
+              label: 合同文件
+              type: file
+              required: false
+              allowed_file_types:
+                - document
+              allowed_file_upload_methods:
+                - local_file
+                - remote_url
+              allowed_file_extensions: []
+            - variable: contract_text
+              label: 合同正文或生成需求
+              type: paragraph
+              required: false
+              max_length: 120000
+            - variable: contract_type
+              label: 合同类型
+              type: text-input
+              required: false
+              default: 技术/软件合同
+              max_length: 120
+            - variable: role
+              label: 用户立场/身份
+              type: text-input
+              required: false
+              default: 甲方（我方）
+              max_length: 80
+            - variable: focus_areas
+              label: 关注重点/包含条款
+              type: paragraph
+              required: false
+              max_length: 1200
+            - variable: requirements
+              label: 补充说明
+              type: paragraph
+              required: false
+              max_length: 12000
+            - variable: jurisdiction
+              label: 适用法域
+              type: text-input
+              required: false
+              default: 中国大陆
+              max_length: 80
+            - variable: output_style
+              label: 输出风格
+              type: select
+              required: false
+              default: 普通用户可读
+              options:
+                - 普通用户可读
+                - 专业清晰
+                - 严谨详细
+              max_length: 40
+      - id: has_file
+        type: custom
+        position:
+          x: 360
+          y: 360
+        data:
+          title: 是否上传文件
+          type: if-else
+          desc: "有文件则先提取文本；无文件则直接使用粘贴文本或生成需求。"
+          selected: false
+          logical_operator: and
+          _targetBranches:
+            - id: file_uploaded
+              name: 已上传文件
+            - id: 'false'
+              name: 未上传文件
+          cases:
+            - case_id: file_uploaded
+              logical_operator: and
+              conditions:
+                - id: has_contract_file
+                  variable_selector:
+                    - start
+                    - contract_file
+                  comparison_operator: not empty
+                  value: ""
+      - id: doc_extract
+        type: custom
+        position:
+          x: 680
+          y: 180
+        data:
+          title: 提取合同文件文本
+          type: document-extractor
+          desc: "把 PDF/Word/TXT/Markdown 合同文件转换为模型可读文本。"
+          selected: false
+          variable_selector:
+            - start
+            - contract_file
+          is_array_file: false
+      - id: merge_file_text
+        type: custom
+        position:
+          x: 980
+          y: 180
+        data:
+          title: 合并文件与输入
+          type: code
+          desc: "合并上传文件文本、输入框文本、补充说明和用户问题。"
+          selected: false
+          code_language: python3
+          code: |
+            def _clip(value, limit):
+                text = (value or "").strip()
+                return text[:limit]
+
+            def main(file_text: str, contract_text: str, requirements: str, query: str) -> dict:
+                parts = []
+                if file_text:
+                    parts.append("【文件解析文本】\n" + _clip(file_text, 100000))
+                if contract_text:
+                    parts.append("【输入框文本】\n" + _clip(contract_text, 40000))
+                if requirements:
+                    parts.append("【补充说明】\n" + _clip(requirements, 12000))
+                if query:
+                    parts.append("【用户原始问题】\n" + _clip(query, 8000))
+                combined = "\n\n".join(parts).strip()
+                return {
+                    "combined_text": combined,
+                    "source_type": "file_plus_text" if contract_text else "file",
+                    "char_count": len(combined)
+                }
+          outputs:
+            combined_text:
+              type: string
+            source_type:
+              type: string
+            char_count:
+              type: number
+          variables:
+            - variable: file_text
+              value_selector:
+                - doc_extract
+                - text
+            - variable: contract_text
+              value_selector:
+                - start
+                - contract_text
+            - variable: requirements
+              value_selector:
+                - start
+                - requirements
+            - variable: query
+              value_selector:
+                - sys
+                - query
+      - id: merge_text_only
+        type: custom
+        position:
+          x: 980
+          y: 520
+        data:
+          title: 整理文本输入
+          type: code
+          desc: "无上传文件时，整理粘贴文本、生成需求、补充说明和用户问题。"
+          selected: false
+          code_language: python3
+          code: |
+            def _clip(value, limit):
+                text = (value or "").strip()
+                return text[:limit]
+
+            def main(contract_text: str, requirements: str, query: str) -> dict:
+                parts = []
+                if contract_text:
+                    parts.append("【输入框文本】\n" + _clip(contract_text, 100000))
+                if requirements:
+                    parts.append("【补充说明】\n" + _clip(requirements, 12000))
+                if query:
+                    parts.append("【用户原始问题】\n" + _clip(query, 8000))
+                combined = "\n\n".join(parts).strip()
+                return {
+                    "combined_text": combined,
+                    "source_type": "text",
+                    "char_count": len(combined)
+                }
+          outputs:
+            combined_text:
+              type: string
+            source_type:
+              type: string
+            char_count:
+              type: number
+          variables:
+            - variable: contract_text
+              value_selector:
+                - start
+                - contract_text
+            - variable: requirements
+              value_selector:
+                - start
+                - requirements
+            - variable: query
+              value_selector:
+                - sys
+                - query
+      - id: merged_contract_text
+        type: custom
+        position:
+          x: 1290
+          y: 360
+        data:
+          title: 统一合同文本
+          type: variable-aggregator
+          desc: "把文件路径或纯文本路径重新合并为一个文本变量。"
+          selected: false
+          output_type: string
+          variables:
+            - - merge_file_text
+              - combined_text
+            - - merge_text_only
+              - combined_text
+      - id: element_extract
+        type: custom
+        position:
+          x: 1600
+          y: 360
+        data:
+          title: 合同要素抽取
+          type: parameter-extractor
+          desc: "先抽出主体、标的、金额、期限、付款、交付验收等关键要素，供审查和生成使用。"
+          selected: false
+          query:
+            - merged_contract_text
+            - output
+          model:
+            provider: langgenius/deepseek/deepseek
+            name: deepseek-v4-flash
+            mode: chat
+            completion_params:
+              temperature: 0
+              max_tokens: 3000
+          reasoning_mode: prompt
+          vision:
+            enabled: false
+          instruction: |
+            你是合同帮V1的合同信息抽取器。请从输入文本中抽取明确出现的信息。
+            不要编造；没有出现的信息填空字符串或空数组。
+            如果这是生成合同需求，也要抽取用户描述中的交易要素。
+          parameters:
+            - name: parties
+              type: string
+              required: false
+              description: "合同双方或相关主体信息；未知则留空。"
+            - name: subject_matter
+              type: string
+              required: false
+              description: "合同标的、合作内容、服务内容或交易事项。"
+            - name: amount
+              type: string
+              required: false
+              description: "合同金额、价款、报酬、租金、借款本金、付款总额等。"
+            - name: payment_terms
+              type: string
+              required: false
+              description: "付款方式、付款节点、发票、结算、利息或还款安排。"
+            - name: term
+              type: string
+              required: false
+              description: "合同期限、履行期限、租期、工期、服务期或还款期限。"
+            - name: delivery_acceptance
+              type: string
+              required: false
+              description: "交付、验收、整改、竣工、收货或成果确认安排。"
+            - name: quality_standard
+              type: string
+              required: false
+              description: "质量标准、规格、需求标准、服务标准或验收依据。"
+            - name: breach_liability
+              type: string
+              required: false
+              description: "违约责任、违约金、赔偿、逾期责任或提前到期责任。"
+            - name: termination
+              type: string
+              required: false
+              description: "解除、终止、退租、退出、暂停、提前解约等安排。"
+            - name: dispute_resolution
+              type: string
+              required: false
+              description: "争议解决方式、管辖法院、仲裁、适用法律。"
+            - name: special_terms
+              type: string
+              required: false
+              description: "保密、知识产权、数据安全、担保、竞业限制、维修、变更签证等特殊条款。"
+            - name: missing_core_fields
+              type: array[string]
+              required: false
+              description: "根据文本初步判断缺失的核心信息，最多列 8 项。"
+      - id: app_context
+        type: custom
+        position:
+          x: 1940
+          y: 360
+        data:
+          title: 组装专业上下文
+          type: template-transform
+          desc: "把 APP 字段、抽取要素、类型 checklist 和评分规则组装为下游 prompt。"
+          selected: false
+          template: |
+            【合同帮V1任务】
+            app_input_mode: {{ mode }}
+            用户原始问题: {{ query }}
+            合同类型: {{ contract_type }}
+            用户立场/身份: {{ role }}
+            关注重点或包含条款: {{ focus_areas }}
+            适用法域: {{ jurisdiction }}
+            输出风格: {{ output_style }}
+
+            【输入正文/需求】
+            {{ merged_text }}
+
+            【已抽取合同要素】
+            双方主体: {{ parties }}
+            合同事项/标的: {{ subject_matter }}
+            金额/报酬: {{ amount }}
+            付款/结算: {{ payment_terms }}
+            期限/履行期: {{ term }}
+            交付验收: {{ delivery_acceptance }}
+            数量质量/标准: {{ quality_standard }}
+            违约责任: {{ breach_liability }}
+            解除终止: {{ termination }}
+            争议解决: {{ dispute_resolution }}
+            特殊条款: {{ special_terms }}
+            初步缺失信息: {{ missing_core_fields }}
+
+            【评分规则】
+            score 是合同安全/可用分，越高越安全可用。
+            A: 90-100，低风险，基本可直接使用或签署前做常规确认。
+            B: 80-89，较低风险，整体可用，但建议优化若干条款。
+            C: 70-79，中等风险，风险可控，但关键条款应修改后再使用。
+            D: 60-69，较高风险，不建议直接签署或发送，应系统修订。
+            E: 0-59，重大风险、信息严重不足或风险不可控。
+
+            【合同类型专项 checklist】
+            1. 买卖/采购合同：主体资质、标的规格、数量质量、价款支付、交货验收、所有权与风险转移、违约责任、争议解决。
+            2. 房屋租赁合同：房屋权属、租期、租金押金、用途限制、维修责任、转租装修、解除退租、违约与腾退。
+            3. 劳动/用工合同：主体身份、岗位地点、工时休假、薪酬社保、试用期、保密竞业、解除终止、劳动争议。
+            4. 服务/委托合同：服务范围、成果标准、服务费用、双方配合义务、期限交付、保密/知识产权、违约责任、解约机制。
+            5. 承揽/加工定作合同：定作要求、材料供应、加工质量、交付验收、报酬结算、瑕疵整改、风险转移、违约责任。
+            6. 建设工程合同：主体资质、工程范围、工期节点、价款结算、质量安全、变更签证、竣工验收、违约争议。
+            7. 技术/软件合同：需求范围、里程碑、交付验收、源码/知识产权、维护支持、数据安全、付款节点、违约/退出。
+            8. 借款/担保合同：本金利息、借款用途、期限还款、担保范围、抵质押/保证、提前到期、逾期责任、管辖争议。
+            9. 其他/自定义：按签约主体、合同事项、价款付款、履行交付、质量标准、违约责任、解除终止、争议解决做通用检查。
+
+            【租房合同生成评测规则】
+            1. 房屋租赁合同生成前，正式合同至少需要核对 9 项必要信息：双方姓名和身份证号、双方联系电话、房屋详细地址、房屋面积/户型或交付状态、租期起止时间、租金金额和周期、押金金额及退还条件和时间、付款周期/付款方式、水电气物业等费用承担。
+            2. 任意关键项缺失时，不得编造姓名、证件号、电话、地址、金额、日期；应输出 status=need_input 或用 [待补充] 占位，并在 missing_fields/followup_questions 中集中追问。
+            3. 用户明确只要“模板/范本/标准框架/空白版本”时，可以输出空白模板，但必须说明这不是基于完整信息生成的正式合同。
+            4. 信息齐备并进入正式生成时，合同至少包含：标题、双方主体、房屋信息、租期、租金与付款、押金、费用承担、维修、转租/同住、解除、违约、争议解决、签署日期与签字栏。
+
+            【租房合同审查评测规则】
+            1. 风险按红/黄/绿判断：红色是违法违规或导致合同部分/全部无效的底线风险；黄色是表述模糊、权责不清或单边不公平的争议风险；绿色是基本合规可保留。
+            2. 红色风险优先识别。若存在红色风险，必须在 clause_reviews 中明确列出；红黄之间存疑时从严按红色提示，黄绿之间存疑时按黄色提示。
+            3. 常见红色方向包括：主体/权属不适格、租期超过法定上限、强制租金贷或明显违法费用、非居住空间/违法群租、剥夺法定解除/投诉维权/随意入户、约定违法用途或歧视条款。
+            4. 常见黄色方向包括：交付清单缺失、租金/水电/物业费用规则模糊、押金退还期限不明、维修责任划分不清、提前退租/续租机制不明、返还验收流程缺失、转租/同住/宠物/拆迁/争议解决未约定。
+            5. 黄色风险必须说明对谁不利、可能引发什么纠纷，并给出可执行修改建议。
+
+            【法律引用策略】
+            当前版本尚未连接法规知识库。不得伪造精确法条或虚假来源。
+            可以输出 plain_language_basis 解释风险依据。
+            legal_references 只允许填写 verification_status 为 "pending_knowledge_base" 或 "not_connected" 的说明。
+          variables:
+            - variable: mode
+              value_selector:
+                - start
+                - mode
+            - variable: query
+              value_selector:
+                - sys
+                - query
+            - variable: contract_type
+              value_selector:
+                - start
+                - contract_type
+            - variable: role
+              value_selector:
+                - start
+                - role
+            - variable: focus_areas
+              value_selector:
+                - start
+                - focus_areas
+            - variable: jurisdiction
+              value_selector:
+                - start
+                - jurisdiction
+            - variable: output_style
+              value_selector:
+                - start
+                - output_style
+            - variable: merged_text
+              value_selector:
+                - merged_contract_text
+                - output
+            - variable: parties
+              value_selector:
+                - element_extract
+                - parties
+            - variable: subject_matter
+              value_selector:
+                - element_extract
+                - subject_matter
+            - variable: amount
+              value_selector:
+                - element_extract
+                - amount
+            - variable: payment_terms
+              value_selector:
+                - element_extract
+                - payment_terms
+            - variable: term
+              value_selector:
+                - element_extract
+                - term
+            - variable: delivery_acceptance
+              value_selector:
+                - element_extract
+                - delivery_acceptance
+            - variable: quality_standard
+              value_selector:
+                - element_extract
+                - quality_standard
+            - variable: breach_liability
+              value_selector:
+                - element_extract
+                - breach_liability
+            - variable: termination
+              value_selector:
+                - element_extract
+                - termination
+            - variable: dispute_resolution
+              value_selector:
+                - element_extract
+                - dispute_resolution
+            - variable: special_terms
+              value_selector:
+                - element_extract
+                - special_terms
+            - variable: missing_core_fields
+              value_selector:
+                - element_extract
+                - missing_core_fields
+      - id: intent_classifier
+        type: custom
+        position:
+          x: 2290
+          y: 360
+        data:
+          title: 三类意图识别
+          type: question-classifier
+          desc: "固定识别为审查合同、生成合同、咨询和其他，不使用 Else 默认分支。"
+          selected: false
+          classes:
+            - id: review
+              name: 审查合同
+            - id: generate
+              name: 生成合同
+            - id: consult
+              name: 咨询和其他
+          instruction: |
+            你是合同帮V1的意图识别器。必须且只能把输入归入以下三类之一：
+
+            1. 审查合同 review
+            用户要检查、审核、审查、评估已有合同或条款风险；用户上传/粘贴了明显的既有合同正文；用户问这份合同能不能签、有没有问题、哪里有坑、怎么改。
+
+            2. 生成合同 generate
+            用户要起草、生成、草拟、拟定、写一份、做个合同/协议/模板/草案；用户描述自己身份和交易目的，希望得到一份可复制的合同正文。
+            例：“我是房东，我想做个租房合同”必须归为生成合同。
+
+            3. 咨询和其他 consult
+            用户只是咨询合同知识、问注意事项、问流程、问某个概念；需求不明确；普通闲聊；询问合同帮能做什么；暂时无法判断是审查还是生成。
+
+            app_input_mode 优先级：
+            - app_input_mode=review 时，归为审查合同。
+            - app_input_mode=generate 时，归为生成合同。
+            - app_input_mode=consult 时，归为咨询和其他。
+            - app_input_mode=auto 时，根据用户原始问题、输入正文/需求和抽取要素判断。
+
+            不要输出第四类，不要创建默认兜底类，不要把“想做一份合同”误判为审查。
+          instructions: |
+            固定三类：审查合同、生成合同、咨询和其他。优先尊重 app_input_mode；auto 时根据用户自然语言分类。
+          model:
+            provider: langgenius/deepseek/deepseek
+            name: deepseek-v4-flash
+            mode: chat
+            completion_params:
+              temperature: 0
+              max_tokens: 1000
+          query_variable_selector:
+            - app_context
+            - output
+          topics: []
+      - id: review_llm
+        type: custom
+        position:
+          x: 2640
+          y: 160
+        data:
+          title: 专业合同审查
+          type: llm
+          desc: "面向普通用户可读的专业合同审查报告。"
+          selected: false
+          reasoning_format: separated
+          context:
+            enabled: false
+            variable_selector: []
+          memory:
+            query_prompt_template: "{{#sys.query#}}"
+            role_prefix:
+              assistant: ""
+              user: ""
+            window:
+              enabled: false
+              size: 0
+          model:
+            provider: langgenius/deepseek/deepseek
+            name: deepseek-v4-pro
+            mode: chat
+            completion_params:
+              temperature: 0.12
+              max_tokens: 12000
+          vision:
+            enabled: false
+          prompt_template:
+            - id: review_system
+              role: system
+              text: |
+                你是“合同帮V1”的合同审查专家。你的目标不是吓唬用户，而是让普通用户看懂合同能不能签、哪里要改、怎么改。
+
+                总原则：
+                - 只服务“审查合同”功能，不输出合同生成正文。
+                - 输出必须是纯 JSON，不要 Markdown 代码块，不要 JSON 外说明，不要 <think>。
+                - 适用法域默认按中国大陆合同场景处理。
+                - 不要编造合同没有写的事实。没有的信息写入 missing_fields 和 followup_questions。
+                - 如果完全没有合同正文或可审查条款，status 设为 "need_input"，score=0，grade="E"。
+                - 如果正文足够审查但有局部信息缺失，status 仍可为 "complete"，并在 limitations 中说明。
+                - 审查要优先覆盖用户选择的关注重点，同时根据合同类型专项 checklist 补充重大风险。
+                - 如果是房屋租赁合同，必须按“红/黄/绿”风险底线审查。红色风险优先识别；红黄之间存疑时从严按红色提示，黄绿之间存疑时按黄色提示。
+                - 租房合同审查至少检查：主体与权属、租期、租金押金、费用承担、居住安全、随意入户/扣押金/禁止维权、维修责任、提前退租、转租同住、争议解决。
+                - 风险建议要落到“问题、后果、怎么改、建议替换条款”。
+                - 评分必须按合同安全/可用分计算，越高越安全可用。不要把高风险合同打高分。
+
+                五档评分：
+                A: 90-100，低风险，基本可直接使用或签署前做常规确认。
+                B: 80-89，较低风险，整体可用，但建议优化若干条款。
+                C: 70-79，中等风险，风险可控，但关键条款应修改后再使用。
+                D: 60-69，较高风险，不建议直接签署或发送，应系统修订。
+                E: 0-59，重大风险、信息严重不足或风险不可控。
+
+                输出 JSON 顶层字段必须包含：
+                intent, status, result_type, title, contract_type, role,
+                score, grade, grade_label, risk_level, score_explanation,
+                summary, information_completeness, facts, risk_counts,
+                key_findings, clause_reviews, suggested_revisions,
+                signature_checklist, legal_references, followup_questions,
+                markdown_report, disclaimer。
+
+                clause_reviews 每项字段：
+                focus_area, clause_title, original_text, risk_level, issue,
+                impact, favored_party, suggestion, replacement_text, priority。
+
+                suggested_revisions 每项字段：
+                clause_title, original_text, replacement_text, reason, favored_party。
+
+                legal_references 当前不要写精确法条；只写：
+                [{"title":"法规知识库未连接","source_type":"knowledge_base","verification_status":"not_connected","note":"后续接入法规知识库后再返回可核验引用。"}]
+
+                markdown_report 要适合移动端展示，结构为：
+                # 审查结论
+                ## 合同安全分
+                ## 关键事实
+                ## 重点风险
+                ## 建议修改
+                ## 签署前清单
+                ## 需要补充的信息
+            - id: review_user
+              role: user
+              text: |
+                请按合同帮V1审查标准处理以下上下文：
+
+                {{#app_context.output#}}
+      - id: generate_llm
+        type: custom
+        position:
+          x: 2640
+          y: 620
+        data:
+          title: 专业合同生成
+          type: llm
+          desc: "按用户身份和合同类型生成普通用户可读、可复制的合同草案。"
+          selected: false
+          reasoning_format: separated
+          context:
+            enabled: false
+            variable_selector: []
+          memory:
+            query_prompt_template: "{{#sys.query#}}"
+            role_prefix:
+              assistant: ""
+              user: ""
+            window:
+              enabled: false
+              size: 0
+          model:
+            provider: langgenius/deepseek/deepseek
+            name: deepseek-v4-pro
+            mode: chat
+            completion_params:
+              temperature: 0.16
+              max_tokens: 14000
+          vision:
+            enabled: false
+          prompt_template:
+            - id: generate_system
+              role: system
+              text: |
+                你是“合同帮V1”的合同生成专家。你的目标是根据普通用户输入生成一份结构完整、能复制使用、并且风险提示清楚的中文合同草案。
+
+                总原则：
+                - 只服务“生成合同”功能，不输出审查报告。
+                - 输出必须是纯 JSON，不要 Markdown 代码块，不要 JSON 外说明，不要 <think>。
+                - 适用法域默认按中国大陆合同场景处理。
+                - 按用户身份保护用户：甲方（我方）则整体偏保护甲方；乙方（对方）则偏保护乙方；中立审查则尽量平衡。
+                - 生成合同必须覆盖用户选择的“包含条款”；如用户未选，也至少覆盖双方信息、合作内容/标的、价款报酬、履行安排、交付验收、质量标准、违约责任、争议解决、签署栏。
+                - 如果用户明确只要模板/范本/空白框架，可以输出空白模板，但必须说明这不是基于完整信息生成的正式合同。
+                - 如果是房屋租赁合同，正式生成前必须核对 9 项必要信息：双方姓名和身份证号、双方联系电话、房屋详细地址、房屋面积/户型或交付状态、租期起止时间、租金金额和周期、押金金额及退还条件和时间、付款周期/付款方式、水电气物业等费用承担。
+                - 房屋租赁合同缺失任一关键项时，不得编造姓名、证件号、电话、地址、金额、日期；应优先集中追问缺失项。若为了保持交互可用而输出框架，只能用 [待补充]，并把缺失项写入 missing_fields 和 followup_questions。
+                - 房屋租赁合同信息齐备并正式生成时，至少包含：标题、双方主体、房屋信息、租期、租金与付款、押金、费用承担、维修、转租/同住、解除、违约、争议解决、签署日期与签字栏。
+                - 对于轻微缺失信息，可以用 [待补充] 占位并在 assumptions / missing_fields / signing_checklist 中提醒。
+                - 对于严重缺失信息，status 设为 "need_input"，不要强行生成空泛合同。
+                - 严重缺失标准：既没有合同类型，也没有交易/合作事项；或用户只说“帮我生成合同”但没有任何业务内容。
+                - 不要伪造确定的主体名称、金额、日期、地址、账号。未知内容用 [待补充]。
+
+                五档评分用于草案完整度和可用度：
+                A: 90-100，信息充分，草案结构完整，可进入签署前确认。
+                B: 80-89，整体可用，少量字段需补齐。
+                C: 70-79，可作为初稿，但关键商业信息需补齐。
+                D: 60-69，信息不足较多，仅适合作为框架。
+                E: 0-59，信息严重不足，不应生成完整合同。
+
+                输出 JSON 顶层字段必须包含：
+                intent, status, result_type, contract_title, contract_type, role,
+                score, grade, grade_label, summary, missing_fields,
+                followup_questions, assumptions, facts_to_confirm,
+                clause_outline, contract_markdown, risk_notes,
+                signing_checklist, legal_references, next_steps, disclaimer。
+
+                clause_outline 每项字段：
+                section, purpose, included, source。
+
+                contract_markdown 必须是完整合同正文，使用清晰中文标题和条款编号：
+                # 合同标题
+                甲方...
+                乙方...
+                第一条 ...
+                第二条 ...
+                ...
+                签署栏
+
+                legal_references 当前不要写精确法条；只写：
+                [{"title":"法规知识库未连接","source_type":"knowledge_base","verification_status":"not_connected","note":"后续接入法规知识库后再返回可核验引用。"}]
+            - id: generate_user
+              role: user
+              text: |
+                请按合同帮V1生成标准处理以下上下文：
+
+                {{#app_context.output#}}
+      - id: consult_llm
+        type: custom
+        position:
+          x: 2640
+          y: 980
+        data:
+          title: 合同咨询与需求澄清
+          type: llm
+          desc: "处理合同知识咨询、需求不明确、闲聊引导，不强行进入审查或生成。"
+          selected: false
+          reasoning_format: separated
+          context:
+            enabled: false
+            variable_selector: []
+          memory:
+            query_prompt_template: "{{#sys.query#}}"
+            role_prefix:
+              assistant: ""
+              user: ""
+            window:
+              enabled: false
+              size: 0
+          model:
+            provider: langgenius/deepseek/deepseek
+            name: deepseek-v4-pro
+            mode: chat
+            completion_params:
+              temperature: 0.15
+              max_tokens: 7000
+          vision:
+            enabled: false
+          prompt_template:
+            - id: consult_system
+              role: system
+              text: |
+                你是“合同帮V1”的首页聊天与咨询兜底助手。你的目标是回答普通用户的合同知识问题、澄清不明确需求，并把用户自然引导到“合同审查”或“合同生成”。
+
+                总原则：
+                - 只服务“合同咨询/需求澄清/普通闲聊兜底”分支，不输出完整合同正文，不输出正式审查报告。
+                - 产品核心功能仍只有合同审查和合同生成；本分支只是首页自由输入的兜底，不要把自己包装成第三个正式功能。
+                - 输出必须是纯 JSON，不要 Markdown 代码块，不要 JSON 外说明，不要 <think>。
+                - 适用法域默认按中国大陆合同场景做一般性说明。
+                - 不要编造精确法条、案例号、官方来源。当前法规知识库未连接。
+                - 语言给普通用户看得懂，避免律师腔，但要有专业边界。
+                - 用户问“你好/你能做什么”时，简短介绍合同审查、合同生成和合同咨询能力。
+                - 用户需求不明确时，不要强行生成或审查；给 2-5 个最关键追问。
+                - 用户问合同知识时，给通俗解释、注意事项、常见风险和下一步建议。
+                - 如果用户明显应该进入生成，recommended_mode 写 "generate"；如果明显应该上传/粘贴合同审查，recommended_mode 写 "review"；否则写 "consult"。
+
+                输出 JSON 顶层字段必须包含：
+                intent, status, result_type, title, topic, contract_type, role,
+                summary, answer_markdown, key_points, practical_tips,
+                risk_notes, recommended_mode, followup_questions,
+                suggested_actions, legal_references, disclaimer。
+
+                answer_markdown 要适合移动端展示，结构可包含：
+                # 简要回答
+                ## 你需要知道的点
+                ## 常见风险
+                ## 下一步怎么做
+
+                legal_references 当前不要写精确法条；只写：
+                [{"title":"法规知识库未连接","source_type":"knowledge_base","verification_status":"not_connected","note":"后续接入法规知识库后再返回可核验引用。"}]
+            - id: consult_user
+              role: user
+              text: |
+                请按合同帮V1咨询标准处理以下上下文：
+
+                {{#app_context.output#}}
+      - id: review_quality_gate
+        type: custom
+        position:
+          x: 3000
+          y: 160
+        data:
+          title: 审查 JSON 质量门
+          type: code
+          desc: "清理模型输出，统一五档评分字段，保证返回前端可解析 JSON。"
+          selected: false
+          code_language: python3
+          code: |
+            import json
+            import re
+
+            def clean_text(text):
+                cleaned = re.sub(r"(?is)<think>.*?</think>\s*", "", text or "").strip()
+                fence = re.match(r"(?is)^```(?:json)?\s*(.*?)\s*```$", cleaned)
+                if fence:
+                    cleaned = fence.group(1).strip()
+                start = cleaned.find("{")
+                end = cleaned.rfind("}")
+                if start >= 0 and end > start:
+                    cleaned = cleaned[start:end + 1].strip()
+                return cleaned
+
+            def grade_from_score(score):
+                try:
+                    score = int(round(float(score)))
+                except Exception:
+                    score = 0
+                score = max(0, min(100, score))
+                if score >= 90:
+                    return score, "A", "低风险，基本可直接使用或签署前做常规确认"
+                if score >= 80:
+                    return score, "B", "较低风险，整体可用，但建议优化若干条款"
+                if score >= 70:
+                    return score, "C", "中等风险，风险可控，但关键条款应修改后再使用"
+                if score >= 60:
+                    return score, "D", "较高风险，不建议直接签署或发送，应系统修订"
+                return score, "E", "重大风险、信息严重不足或风险不可控"
+
+            def main(text: str) -> dict:
+                cleaned = clean_text(text)
+                try:
+                    data = json.loads(cleaned)
+                except Exception:
+                    data = {
+                        "intent": "review",
+                        "status": "need_input",
+                        "result_type": "review_report",
+                        "title": "审查结果解析失败",
+                        "summary": "模型输出不是有效 JSON，请重新运行审查。",
+                        "score": 0,
+                        "grade": "E",
+                        "markdown_report": cleaned[:4000],
+                    }
+
+                if not isinstance(data, dict):
+                    data = {
+                        "intent": "review",
+                        "status": "need_input",
+                        "result_type": "review_report",
+                        "title": "审查结果解析失败",
+                        "summary": "模型输出不是 JSON 对象，请重新运行审查。",
+                        "score": 0,
+                        "grade": "E",
+                        "markdown_report": cleaned[:4000],
+                    }
+
+                data["intent"] = "review"
+                data.setdefault("result_type", "review_report")
+                data.setdefault("status", "complete")
+                data.setdefault("title", "合同审查报告")
+                score, grade, label = grade_from_score(data.get("score", data.get("risk_score", 0)))
+                if data.get("status") == "need_input":
+                    score, grade, label = 0, "E", "信息严重不足，暂不能完成可靠审查"
+                data["score"] = score
+                data["grade"] = grade
+                data["grade_label"] = label
+                data.setdefault("risk_level", "unknown" if data.get("status") == "need_input" else "medium")
+                info = data.get("information_completeness")
+                if not isinstance(info, dict):
+                    info = {}
+                    data["information_completeness"] = info
+                missing_fields = info.get("missing_fields", [])
+                if not isinstance(missing_fields, list):
+                    missing_fields = [str(missing_fields)] if missing_fields else []
+                    info["missing_fields"] = missing_fields
+                data.setdefault("missing_fields", missing_fields)
+                data.setdefault("followup_questions", [])
+                data.setdefault("key_findings", [])
+                data.setdefault("clause_reviews", [])
+                data.setdefault("suggested_revisions", [])
+                data.setdefault("signature_checklist", [])
+                data.setdefault("legal_references", [{
+                    "title": "法规知识库未连接",
+                    "source_type": "knowledge_base",
+                    "verification_status": "not_connected",
+                    "note": "后续接入法规知识库后再返回可核验引用。"
+                }])
+                data.setdefault("disclaimer", "AI 辅助审查，不构成律师法律意见；重要合同请交由专业律师复核。")
+                data.setdefault("markdown_report", data.get("summary", ""))
+                return {"text": json.dumps(data, ensure_ascii=False)}
+          outputs:
+            text:
+              type: string
+          variables:
+            - variable: text
+              value_selector:
+                - review_llm
+                - text
+      - id: generate_quality_gate
+        type: custom
+        position:
+          x: 3000
+          y: 620
+        data:
+          title: 生成 JSON 质量门
+          type: code
+          desc: "清理模型输出，统一五档评分字段，保证返回前端可解析 JSON。"
+          selected: false
+          code_language: python3
+          code: |
+            import json
+            import re
+
+            def clean_text(text):
+                cleaned = re.sub(r"(?is)<think>.*?</think>\s*", "", text or "").strip()
+                fence = re.match(r"(?is)^```(?:json)?\s*(.*?)\s*```$", cleaned)
+                if fence:
+                    cleaned = fence.group(1).strip()
+                start = cleaned.find("{")
+                end = cleaned.rfind("}")
+                if start >= 0 and end > start:
+                    cleaned = cleaned[start:end + 1].strip()
+                return cleaned
+
+            def grade_from_score(score):
+                try:
+                    score = int(round(float(score)))
+                except Exception:
+                    score = 0
+                score = max(0, min(100, score))
+                if score >= 90:
+                    return score, "A", "信息充分，草案结构完整，可进入签署前确认"
+                if score >= 80:
+                    return score, "B", "整体可用，少量字段需补齐"
+                if score >= 70:
+                    return score, "C", "可作为初稿，但关键商业信息需补齐"
+                if score >= 60:
+                    return score, "D", "信息不足较多，仅适合作为框架"
+                return score, "E", "信息严重不足，不应生成完整合同"
+
+            def main(text: str) -> dict:
+                cleaned = clean_text(text)
+                try:
+                    data = json.loads(cleaned)
+                except Exception:
+                    data = {
+                        "intent": "generate",
+                        "status": "need_input",
+                        "result_type": "contract_draft",
+                        "contract_title": "生成结果解析失败",
+                        "summary": "模型输出不是有效 JSON，请重新运行生成。",
+                        "score": 0,
+                        "grade": "E",
+                        "contract_markdown": cleaned[:4000],
+                    }
+
+                if not isinstance(data, dict):
+                    data = {
+                        "intent": "generate",
+                        "status": "need_input",
+                        "result_type": "contract_draft",
+                        "contract_title": "生成结果解析失败",
+                        "summary": "模型输出不是 JSON 对象，请重新运行生成。",
+                        "score": 0,
+                        "grade": "E",
+                        "contract_markdown": "",
+                    }
+
+                data["intent"] = "generate"
+                data.setdefault("result_type", "contract_draft")
+                data.setdefault("status", "complete")
+                data.setdefault("contract_title", "合同草案")
+                score, grade, label = grade_from_score(data.get("score", 0))
+                if data.get("status") == "need_input":
+                    score, grade, label = 0, "E", "信息严重不足，暂不能生成可靠合同"
+                data["score"] = score
+                data["grade"] = grade
+                data["grade_label"] = label
+                data.setdefault("missing_fields", [])
+                data.setdefault("followup_questions", [])
+                data.setdefault("assumptions", [])
+                data.setdefault("facts_to_confirm", [])
+                data.setdefault("clause_outline", [])
+                data.setdefault("risk_notes", [])
+                data.setdefault("signing_checklist", [])
+                data.setdefault("next_steps", [])
+                data.setdefault("legal_references", [{
+                    "title": "法规知识库未连接",
+                    "source_type": "knowledge_base",
+                    "verification_status": "not_connected",
+                    "note": "后续接入法规知识库后再返回可核验引用。"
+                }])
+                data.setdefault("disclaimer", "AI 辅助起草，不构成律师法律意见；重要合同请交由专业律师复核。")
+                data.setdefault("contract_markdown", "")
+                return {"text": json.dumps(data, ensure_ascii=False)}
+          outputs:
+            text:
+              type: string
+          variables:
+            - variable: text
+              value_selector:
+                - generate_llm
+                - text
+      - id: consult_quality_gate
+        type: custom
+        position:
+          x: 3000
+          y: 980
+        data:
+          title: 咨询 JSON 质量门
+          type: code
+          desc: "清理咨询分支模型输出，保证返回前端可解析 JSON。"
+          selected: false
+          code_language: python3
+          code: |
+            import json
+            import re
+
+            def clean_text(text):
+                cleaned = re.sub(r"(?is)<think>.*?</think>\s*", "", text or "").strip()
+                fence = re.match(r"(?is)^```(?:json)?\s*(.*?)\s*```$", cleaned)
+                if fence:
+                    cleaned = fence.group(1).strip()
+                start = cleaned.find("{")
+                end = cleaned.rfind("}")
+                if start >= 0 and end > start:
+                    cleaned = cleaned[start:end + 1].strip()
+                return cleaned
+
+            def main(text: str) -> dict:
+                cleaned = clean_text(text)
+                try:
+                    data = json.loads(cleaned)
+                except Exception:
+                    data = {
+                        "intent": "consult",
+                        "status": "complete",
+                        "result_type": "contract_consultation",
+                        "title": "合同咨询",
+                        "topic": "合同问题咨询",
+                        "summary": "模型输出不是标准 JSON，已保留原始回答摘要。",
+                        "answer_markdown": cleaned[:4000],
+                    }
+
+                if not isinstance(data, dict):
+                    data = {
+                        "intent": "consult",
+                        "status": "complete",
+                        "result_type": "contract_consultation",
+                        "title": "合同咨询",
+                        "topic": "合同问题咨询",
+                        "summary": "模型输出不是 JSON 对象，已保留原始回答摘要。",
+                        "answer_markdown": cleaned[:4000],
+                    }
+
+                data["intent"] = "consult"
+                data.setdefault("status", "complete")
+                data.setdefault("result_type", "contract_consultation")
+                data.setdefault("title", "合同咨询")
+                data.setdefault("topic", data.get("title", "合同问题咨询"))
+                data.setdefault("contract_type", "")
+                data.setdefault("role", "")
+                data.setdefault("summary", "")
+                data.setdefault("answer_markdown", data.get("summary", ""))
+                data.setdefault("key_points", [])
+                data.setdefault("practical_tips", [])
+                data.setdefault("risk_notes", [])
+                data.setdefault("recommended_mode", "consult")
+                data.setdefault("followup_questions", [])
+                data.setdefault("suggested_actions", [])
+                data.setdefault("legal_references", [{
+                    "title": "法规知识库未连接",
+                    "source_type": "knowledge_base",
+                    "verification_status": "not_connected",
+                    "note": "后续接入法规知识库后再返回可核验引用。"
+                }])
+                data.setdefault("disclaimer", "AI 辅助说明不构成律师法律意见；重要合同请交由专业律师复核。")
+                return {"text": json.dumps(data, ensure_ascii=False)}
+          outputs:
+            text:
+              type: string
+          variables:
+            - variable: text
+              value_selector:
+                - consult_llm
+                - text
+      - id: review_answer
+        type: custom
+        position:
+          x: 3340
+          y: 160
+        data:
+          title: 输出审查结果
+          type: answer
+          desc: "返回 APP 可解析的审查 JSON。"
+          selected: false
+          answer: "{{#review_quality_gate.text#}}"
+      - id: generate_answer
+        type: custom
+        position:
+          x: 3340
+          y: 620
+        data:
+          title: 输出生成结果
+          type: answer
+          desc: "返回 APP 可解析的生成 JSON。"
+          selected: false
+          answer: "{{#generate_quality_gate.text#}}"
+      - id: consult_answer
+        type: custom
+        position:
+          x: 3340
+          y: 980
+        data:
+          title: 输出咨询结果
+          type: answer
+          desc: "返回 APP 可解析的咨询 JSON。"
+          selected: false
+          answer: "{{#consult_quality_gate.text#}}"
+    viewport:
+      x: -210
+      y: 30
+      zoom: 0.58
