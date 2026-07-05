@@ -1,5 +1,8 @@
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
+from app.core.config import settings
 from app.main import create_app
 from app.services.llm.base import parse_json_object
 
@@ -15,7 +18,24 @@ class FakeProvider:
         return "这是自由聊天回复。"
 
 
-def test_review_rental_contract_shape(monkeypatch) -> None:
+def _client(tmp_path: Path, monkeypatch) -> TestClient:
+    monkeypatch.setattr(settings, "auth_db_path", str(tmp_path / "auth.sqlite3"))
+    monkeypatch.setattr(settings, "jwt_secret", "test-secret")
+    monkeypatch.setattr(settings, "jwt_expires_minutes", 60)
+    client = TestClient(create_app())
+    response = client.post(
+        "/api/auth/register",
+        json={
+            "email": f"prompts-{id(client)}@example.com",
+            "password": "TestPassw0rd!",
+        },
+    )
+    assert response.status_code == 200
+    client.headers.update({"Authorization": f"Bearer {response.json()['access_token']}"})
+    return client
+
+
+def test_review_rental_contract_shape(tmp_path: Path, monkeypatch) -> None:
     expected = {
         "title": "租房合同审查报告",
         "summary": "押金退还和维修责任需要重点确认。",
@@ -47,7 +67,7 @@ def test_review_rental_contract_shape(monkeypatch) -> None:
         lambda: FakeProvider(expected),
     )
 
-    client = TestClient(create_app())
+    client = _client(tmp_path, monkeypatch)
     response = client.post(
         "/api/contracts/run",
         json={
@@ -73,7 +93,7 @@ def test_review_rental_contract_shape(monkeypatch) -> None:
     assert "legal_basis" in result["clause_reviews"][0]
 
 
-def test_generate_sales_contract_shape(monkeypatch) -> None:
+def test_generate_sales_contract_shape(tmp_path: Path, monkeypatch) -> None:
     expected = {
         "title": "货物买卖合同",
         "draft": "货物买卖合同\n\n甲方：A 公司\n乙方：B 公司\n第一条 标的：采购办公椅 100 把。",
@@ -86,7 +106,7 @@ def test_generate_sales_contract_shape(monkeypatch) -> None:
         lambda: FakeProvider(expected),
     )
 
-    client = TestClient(create_app())
+    client = _client(tmp_path, monkeypatch)
     response = client.post(
         "/api/contracts/run",
         json={
@@ -105,7 +125,7 @@ def test_generate_sales_contract_shape(monkeypatch) -> None:
     assert result["notes"][0] == "AI 辅助起草，不构成法律意见。"
 
 
-def test_unknown_intent_needs_user_choice(monkeypatch) -> None:
+def test_unknown_intent_needs_user_choice(tmp_path: Path, monkeypatch) -> None:
     expected = {
         "type": "need_input",
         "intent": "unknown",
@@ -116,7 +136,7 @@ def test_unknown_intent_needs_user_choice(monkeypatch) -> None:
     }
     monkeypatch.setattr("app.services.chat.create_qwen_provider", lambda: FakeProvider(expected))
 
-    client = TestClient(create_app())
+    client = _client(tmp_path, monkeypatch)
     response = client.post(
         "/api/chat",
         json={"messages": [{"role": "user", "content": "我这个合同帮我处理一下"}]},

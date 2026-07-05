@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ChatView: View {
     @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var authStore: AuthStore
     @EnvironmentObject private var historyStore: HistoryStore
 
     private let localRecordId: UUID?
@@ -121,7 +122,11 @@ struct ChatView: View {
 
     private var composer: some View {
         VStack(spacing: 10) {
-            if let errorMessage {
+            if !authStore.status.isSignedIn {
+                ErrorBanner(message: "请先登录后使用对话。", retryTitle: "去登录") {
+                    openSignIn()
+                }
+            } else if let errorMessage {
                 ErrorBanner(message: errorMessage, retryTitle: "重试") {
                     retryLastUserMessage()
                 }
@@ -172,7 +177,7 @@ struct ChatView: View {
     }
 
     private var canSend: Bool {
-        !isSending && input.trimmedForInput.nilIfBlank != nil
+        authStore.status.isSignedIn && !isSending && input.trimmedForInput.nilIfBlank != nil
     }
 
     private var latestUserInput: String? {
@@ -226,6 +231,9 @@ struct ChatView: View {
 
     @MainActor
     private func sendCurrentInput() {
+        guard requireSignIn() else {
+            return
+        }
         let text = input.trimmedForInput
         guard !isSending, !text.isEmpty else {
             return
@@ -249,11 +257,17 @@ struct ChatView: View {
             return
         }
 
+        guard requireSignIn() else {
+            return
+        }
         submitUserText(text)
     }
 
     @MainActor
     private func submitUserText(_ text: String) {
+        guard requireSignIn() else {
+            return
+        }
         guard !isSending, !text.isEmpty else {
             return
         }
@@ -272,6 +286,9 @@ struct ChatView: View {
 
     @MainActor
     private func retryLastUserMessage() {
+        guard requireSignIn() else {
+            return
+        }
         guard !isSending else {
             return
         }
@@ -323,6 +340,9 @@ struct ChatView: View {
 
     @MainActor
     private func openMode(_ mode: ContractMode, prefill recommendedPrefill: String? = nil) {
+        guard requireSignIn() else {
+            return
+        }
         guard let prefill = recommendedPrefill?.nilIfBlank ?? latestUserInput else {
             return
         }
@@ -422,6 +442,21 @@ struct ChatView: View {
 
     private static let bottomAnchorId = "chat-bottom-anchor"
     private static let modeOrder: [ContractMode] = [.review, .generate]
+
+    @MainActor
+    private func requireSignIn() -> Bool {
+        guard authStore.status.isSignedIn else {
+            openSignIn()
+            return false
+        }
+        return true
+    }
+
+    @MainActor
+    private func openSignIn() {
+        authStore.requestSignIn()
+        appState.selectedTab = .profile
+    }
 }
 
 private struct ChatBubble: View {

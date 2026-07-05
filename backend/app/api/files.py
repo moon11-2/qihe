@@ -1,15 +1,16 @@
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, Depends, File, UploadFile
 
+from app.api.deps import require_current_user
 from app.core.config import settings
 from app.core.errors import api_error
 from app.models.files import FileUploadResponse
 from app.services.files.extractor import SUPPORTED_SUFFIXES, TextExtractionError, extract_text
 from app.services.files.storage import StoredFile, save_metadata, upload_path
 
-router = APIRouter(prefix="/api/files", tags=["files"])
+router = APIRouter(prefix="/api/files", tags=["files"], dependencies=[Depends(require_current_user)])
 
 IMAGE_CONTENT_PREFIX = "image/"
 MAX_CHUNK_SIZE = 1024 * 1024

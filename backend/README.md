@@ -37,7 +37,7 @@ uvicorn app.main:app --host 127.0.0.1 --port 8010
 
 当前接口已具备 MVP 契约能力：聊天、合同审查、合同生成、文件上传解析和 Word 导出均有基础实现与测试覆盖；真实 AI 网关和更完整的合同规则可按开发文档继续增强。
 
-认证接口是可选登录能力，不会拦截现有聊天、审查、生成、上传和导出流程。未登录用户仍可使用核心合同能力。
+注册和登录不需要验证码；用户用邮箱、密码和可选昵称即可注册。除健康检查、注册、登录外，聊天、审查、生成、上传和 Word 导出都需要在请求头携带有效登录 token。
 
 ### 认证接口
 
@@ -48,6 +48,8 @@ uvicorn app.main:app --host 127.0.0.1 --port 8010
 ```json
 {"email":"user@example.com","password":"至少 8 位密码","display_name":"可选昵称"}
 ```
+
+注册不需要短信、邮箱验证码或图形验证码。
 
 响应：
 
@@ -80,6 +82,12 @@ Authorization: Bearer <access_token>
 ```
 
 常见错误码：`email_already_registered`、`invalid_credentials`、`auth_required`、`invalid_token`、`token_expired`、`auth_not_configured`、`validation_error`。
+
+核心合同接口需要登录：
+
+```http
+Authorization: Bearer <access_token>
+```
 
 ## 服务器部署
 

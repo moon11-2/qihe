@@ -45,21 +45,72 @@ struct ProfileView: View {
 
     private var authCard: some View {
         PaperCard(padding: 18) {
-            VStack(alignment: .leading, spacing: 16) {
-                Picker("账号操作", selection: Binding(
-                    get: { authStore.mode },
-                    set: { authStore.switchMode($0) }
-                )) {
-                    ForEach(AuthMode.allCases) { mode in
-                        Text(mode.title).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
+            authContent
+        }
+    }
 
+    @ViewBuilder
+    private var authContent: some View {
+        switch authStore.status {
+        case let .signedIn(user):
+            signedInContent(user: user)
+        case .signedOut:
+            signedOutContent
+        }
+    }
+
+    private func signedInContent(user: AuthUser) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                Image(systemName: "checkmark.shield.fill")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(QiheColor.pine)
+                    .frame(width: 40, height: 40)
+                    .background(QiheColor.pineSoft)
+                    .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(user.displayName)
+                        .font(QiheFont.body(size: 16, weight: .semibold))
+                        .foregroundStyle(QiheColor.ink)
+                        .lineLimit(1)
+
+                    Text(user.account)
+                        .font(QiheFont.caption(size: 12))
+                        .foregroundStyle(QiheColor.muted)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+            }
+
+            if let message = authStore.message {
+                statusMessage(message)
+            }
+
+            QiheSecondaryButton(title: "退出登录", systemImage: "rectangle.portrait.and.arrow.right") {
+                authStore.signOut()
+            }
+        }
+    }
+
+    private var signedOutContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Picker("账号操作", selection: Binding(
+                get: { authStore.mode },
+                set: { authStore.switchMode($0) }
+            )) {
+                ForEach(AuthMode.allCases) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            VStack(alignment: .leading, spacing: 16) {
                 VStack(spacing: 14) {
                     profileField(
                         title: "账号",
-                        placeholder: "手机号或邮箱",
+                        placeholder: "邮箱",
                         text: $emailOrPhone,
                         field: .account
                     )
@@ -67,7 +118,7 @@ struct ProfileView: View {
                     if authStore.mode == .register {
                         profileField(
                             title: "昵称",
-                            placeholder: "用于展示的名称",
+                            placeholder: "可选",
                             text: $displayName,
                             field: .displayName
                         )
@@ -82,31 +133,51 @@ struct ProfileView: View {
                     )
                 }
 
+                if authStore.mode == .register {
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.circle")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(QiheColor.pine)
+
+                        Text("注册无需验证码。")
+                            .font(QiheFont.caption(size: 12))
+                            .foregroundStyle(QiheColor.muted)
+                    }
+                }
+
                 if let message = authStore.message {
-                    Text(message)
-                        .font(QiheFont.body(size: 13))
-                        .foregroundStyle(QiheColor.navy)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(11)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(QiheColor.navySoft)
-                        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
+                    statusMessage(message)
                 }
 
                 QihePrimaryButton(
                     title: authStore.mode.title,
-                    systemImage: authStore.mode == .login ? "person.crop.circle" : "person.badge.plus"
+                    systemImage: authStore.mode == .login ? "person.crop.circle" : "person.badge.plus",
+                    isLoading: authStore.isSubmitting,
+                    isDisabled: authStore.isSubmitting
                 ) {
                     focusedField = nil
                     QiheKeyboard.dismiss()
-                    authStore.submitShell(
-                        emailOrPhone: emailOrPhone,
-                        password: password,
-                        displayName: displayName
-                    )
+                    Task {
+                        await authStore.submit(
+                            emailOrPhone: emailOrPhone,
+                            password: password,
+                            displayName: displayName
+                        )
+                    }
                 }
             }
         }
+    }
+
+    private func statusMessage(_ message: String) -> some View {
+        Text(message)
+            .font(QiheFont.body(size: 13))
+            .foregroundStyle(QiheColor.navy)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(11)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(QiheColor.navySoft)
+            .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
     }
 
     private func profileField(

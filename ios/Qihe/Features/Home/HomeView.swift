@@ -2,6 +2,7 @@ import SwiftUI
 
 struct HomeView: View {
     @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var authStore: AuthStore
     @EnvironmentObject private var historyStore: HistoryStore
     @State private var healthState: HealthState = .checking
     @State private var prompt = ""
@@ -116,6 +117,9 @@ struct HomeView: View {
                             isLoading: isUploading,
                             isDisabled: isUploading
                         ) {
+                            guard requireSignIn() else {
+                                return
+                            }
                             isFileImporterPresented = true
                         }
 
@@ -143,6 +147,9 @@ struct HomeView: View {
 
                 HStack(spacing: 12) {
                     Button {
+                        guard requireSignIn() else {
+                            return
+                        }
                         isPromptFocused = false
                         QiheKeyboard.dismiss()
                         appState.path.append(.review(prefill: nil))
@@ -160,6 +167,9 @@ struct HomeView: View {
                     .buttonStyle(.plain)
 
                     Button {
+                        guard requireSignIn() else {
+                            return
+                        }
                         isPromptFocused = false
                         QiheKeyboard.dismiss()
                         appState.path.append(.generate(prefill: nil))
@@ -224,6 +234,9 @@ struct HomeView: View {
                     Spacer()
 
                     Button("审查") {
+                        guard requireSignIn() else {
+                            return
+                        }
                         isPromptFocused = false
                         QiheKeyboard.dismiss()
                         appState.path.append(.review(prefill: nil, attachment: uploadedFile))
@@ -314,6 +327,9 @@ struct HomeView: View {
     }
 
     private func sendPrompt() {
+        guard requireSignIn() else {
+            return
+        }
         let text = prompt.trimmedForInput
         guard !text.isEmpty || uploadedFile != nil else {
             return
@@ -342,6 +358,12 @@ struct HomeView: View {
     }
 
     private func upload(_ url: URL) async {
+        guard authStore.status.isSignedIn else {
+            await MainActor.run {
+                openSignIn()
+            }
+            return
+        }
         isUploading = true
         uploadError = nil
         defer { isUploading = false }
@@ -351,6 +373,21 @@ struct HomeView: View {
         } catch {
             uploadError = error.qiheDisplayMessage
         }
+    }
+
+    @MainActor
+    private func requireSignIn() -> Bool {
+        guard authStore.status.isSignedIn else {
+            openSignIn()
+            return false
+        }
+        return true
+    }
+
+    @MainActor
+    private func openSignIn() {
+        authStore.requestSignIn()
+        appState.selectedTab = .profile
     }
 
     private func checkHealth() async {

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ReviewInputView: View {
     @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var authStore: AuthStore
     @EnvironmentObject private var historyStore: HistoryStore
     @State private var text: String
     @State private var extraInfo = ""
@@ -93,6 +94,9 @@ struct ReviewInputView: View {
         .toolbar {
             ToolbarItem(placement: .qiheTopTrailing) {
                 Button {
+                    guard requireSignIn() else {
+                        return
+                    }
                     appState.path.append(.chat(localRecordId: nil))
                 } label: {
                     Image(systemName: "bubble.left.and.text.bubble.right")
@@ -167,6 +171,9 @@ struct ReviewInputView: View {
 
                 HStack(spacing: 10) {
                     Button {
+                        guard requireSignIn() else {
+                            return
+                        }
                         isFileImporterPresented = true
                     } label: {
                         Label("更换文件", systemImage: "arrow.triangle.2.circlepath")
@@ -197,6 +204,9 @@ struct ReviewInputView: View {
             }
         } else {
             Button {
+                guard requireSignIn() else {
+                    return
+                }
                 isFileImporterPresented = true
             } label: {
                 uploadSummary(
@@ -418,6 +428,12 @@ struct ReviewInputView: View {
     }
 
     private func upload(_ url: URL) async {
+        guard authStore.status.isSignedIn else {
+            await MainActor.run {
+                openSignIn()
+            }
+            return
+        }
         isUploading = true
         errorMessage = nil
         defer { isUploading = false }
@@ -436,6 +452,9 @@ struct ReviewInputView: View {
     }
 
     private func startReview() {
+        guard requireSignIn() else {
+            return
+        }
         guard hasInput, !isRunning else {
             return
         }
@@ -623,6 +642,21 @@ struct ReviewInputView: View {
         } else if hasInput {
             startReview()
         }
+    }
+
+    @MainActor
+    private func requireSignIn() -> Bool {
+        guard authStore.status.isSignedIn else {
+            openSignIn()
+            return false
+        }
+        return true
+    }
+
+    @MainActor
+    private func openSignIn() {
+        authStore.requestSignIn()
+        appState.selectedTab = .profile
     }
 }
 

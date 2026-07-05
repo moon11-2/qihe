@@ -97,6 +97,6 @@ QIHE_API_BASE_URL=http://192.168.1.10:8010 swift build
 ## 第一阶段真机验收重点
 
 - 首页、审查、生成、对话默认连接 `https://api.qihe1.xyz/api/...`。
-- 未登录也可以继续审查、生成和对话。
+- 后端核心能力需要登录 token；未登录时 App 会引导到“我的”页，后端请求会返回 `auth_required`。
 - 首页、聊天页、审查输入页、生成输入页支持滚动、点击空白和提交后收起键盘。
-- “我的”页目前只提供账号前端壳；后续可接入后端 `/api/auth/register`、`/api/auth/login`、`/api/auth/me` 和真实 token。
+- “我的”页已接入后端 `/api/auth/register`、`/api/auth/login` 和真实 token；注册只需要邮箱、密码和可选昵称，不需要验证码。

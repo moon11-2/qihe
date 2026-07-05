@@ -2,6 +2,7 @@ import SwiftUI
 
 struct GenerateInputView: View {
     @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var authStore: AuthStore
     @EnvironmentObject private var historyStore: HistoryStore
     @State private var text: String
     @State private var isSupplementExpanded = false
@@ -93,6 +94,9 @@ struct GenerateInputView: View {
         .toolbar {
             ToolbarItem(placement: .qiheTopTrailing) {
                 Button {
+                    guard requireSignIn() else {
+                        return
+                    }
                     appState.path.append(.chat(localRecordId: nil))
                 } label: {
                     Image(systemName: "bubble.left.and.text.bubble.right")
@@ -199,6 +203,9 @@ struct GenerateInputView: View {
                 systemImage: attachment == nil ? "doc.badge.plus" : "doc.text",
                 isDisabled: isUploading || isRunning
             ) {
+                guard requireSignIn() else {
+                    return
+                }
                 isFileImporterPresented = true
             }
 
@@ -265,6 +272,12 @@ struct GenerateInputView: View {
     }
 
     private func upload(_ url: URL) async {
+        guard authStore.status.isSignedIn else {
+            await MainActor.run {
+                openSignIn()
+            }
+            return
+        }
         isUploading = true
         errorMessage = nil
         defer { isUploading = false }
@@ -284,6 +297,9 @@ struct GenerateInputView: View {
 
     @MainActor
     private func startGenerate() {
+        guard requireSignIn() else {
+            return
+        }
         guard hasInput, generationTask == nil else {
             return
         }
@@ -386,6 +402,21 @@ struct GenerateInputView: View {
         } else if hasInput {
             startGenerate()
         }
+    }
+
+    @MainActor
+    private func requireSignIn() -> Bool {
+        guard authStore.status.isSignedIn else {
+            openSignIn()
+            return false
+        }
+        return true
+    }
+
+    @MainActor
+    private func openSignIn() {
+        authStore.requestSignIn()
+        appState.selectedTab = .profile
     }
 }
 

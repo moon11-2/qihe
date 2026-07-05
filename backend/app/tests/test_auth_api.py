@@ -133,10 +133,25 @@ def test_me_success_missing_token_and_invalid_token(client: TestClient) -> None:
     assert "error" in invalid_token_response.json()
 
 
-def test_core_contract_api_remains_available_without_login(client: TestClient) -> None:
+def test_core_contract_api_requires_login(client: TestClient) -> None:
+    anonymous_response = client.post(
+        "/api/contracts/run",
+        json={
+            "mode": "generate",
+            "text": "生成一份服务合同，甲方甲公司，乙方乙公司，金额10000元。",
+        },
+    )
 
+    assert anonymous_response.status_code == 401
+    assert anonymous_response.json()["error"]["code"] == "auth_required"
+
+    base = _auth_base(client)
+    credentials = _new_credentials()
+    register_response = _register(client, base, credentials)
+    token = _extract_token(register_response.json())
     response = client.post(
         "/api/contracts/run",
+        headers={"Authorization": f"Bearer {token}"},
         json={
             "mode": "generate",
             "text": "生成一份服务合同，甲方甲公司，乙方乙公司，金额10000元。",

@@ -8,6 +8,7 @@ import AppKit
 
 struct GenerateResultView: View {
     @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var authStore: AuthStore
     @EnvironmentObject private var historyStore: HistoryStore
     let recordId: UUID
     @State private var fieldValues: [String: String] = [:]
@@ -224,6 +225,9 @@ struct GenerateResultView: View {
             }
 
             QihePrimaryButton(title: "继续修改", systemImage: "square.and.pencil") {
+                guard requireSignIn() else {
+                    return
+                }
                 appState.path.append(.generate(prefill: renderedDraft(payload.result)))
             }
         }
@@ -296,6 +300,12 @@ struct GenerateResultView: View {
     }
 
     private func exportWord(_ payload: GenerateHistoryPayload) async {
+        guard authStore.status.isSignedIn else {
+            await MainActor.run {
+                openSignIn()
+            }
+            return
+        }
         isExporting = true
         errorMessage = nil
         defer { isExporting = false }
@@ -311,6 +321,21 @@ struct GenerateResultView: View {
         } catch {
             errorMessage = error.qiheDisplayMessage
         }
+    }
+
+    @MainActor
+    private func requireSignIn() -> Bool {
+        guard authStore.status.isSignedIn else {
+            openSignIn()
+            return false
+        }
+        return true
+    }
+
+    @MainActor
+    private func openSignIn() {
+        authStore.requestSignIn()
+        appState.selectedTab = .profile
     }
 
     private func copyDraft(_ value: String) {

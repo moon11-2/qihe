@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ReviewResultView: View {
     @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var authStore: AuthStore
     @EnvironmentObject private var historyStore: HistoryStore
     let recordId: UUID
     @State private var selectedTab: ReviewResultTab = .risks
@@ -251,10 +252,16 @@ struct ReviewResultView: View {
     private func reviewActionBar(_ payload: ReviewHistoryPayload) -> some View {
         HStack(spacing: 10) {
             QiheSecondaryButton(title: "继续修改", systemImage: "square.and.pencil") {
+                guard requireSignIn() else {
+                    return
+                }
                 appState.path.append(.review(prefill: reviewPrefillText(from: payload)))
             }
 
             QihePrimaryButton(title: "追问 AI", systemImage: "bubble.left.and.text.bubble.right") {
+                guard requireSignIn() else {
+                    return
+                }
                 appState.path.append(.chat(localRecordId: nil, initialMessage: followUpPrompt(for: payload)))
             }
         }
@@ -342,6 +349,12 @@ struct ReviewResultView: View {
     }
 
     private func exportWord(_ payload: ReviewHistoryPayload) async {
+        guard authStore.status.isSignedIn else {
+            await MainActor.run {
+                openSignIn()
+            }
+            return
+        }
         isExporting = true
         errorMessage = nil
         defer { isExporting = false }
@@ -355,6 +368,21 @@ struct ReviewResultView: View {
         } catch {
             errorMessage = error.qiheDisplayMessage
         }
+    }
+
+    @MainActor
+    private func requireSignIn() -> Bool {
+        guard authStore.status.isSignedIn else {
+            openSignIn()
+            return false
+        }
+        return true
+    }
+
+    @MainActor
+    private func openSignIn() {
+        authStore.requestSignIn()
+        appState.selectedTab = .profile
     }
 
     private func gradeLetter(for level: RiskLevel?) -> String {

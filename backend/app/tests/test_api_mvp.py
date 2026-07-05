@@ -19,9 +19,30 @@ class FailingProvider:
         raise RuntimeError("force chat fallback")
 
 
-def _client(tmp_path: Path, monkeypatch) -> TestClient:
+def _client(tmp_path: Path, monkeypatch, *, authenticate: bool = True) -> TestClient:
     monkeypatch.setattr(storage, "UPLOAD_DIR", tmp_path)
-    return TestClient(create_app())
+    monkeypatch.setattr(settings, "auth_db_path", str(tmp_path / "auth.sqlite3"))
+    monkeypatch.setattr(settings, "jwt_secret", "test-secret")
+    monkeypatch.setattr(settings, "jwt_expires_minutes", 60)
+    client = TestClient(create_app())
+    if authenticate:
+        client.headers.update(_auth_headers(client))
+    return client
+
+
+def _auth_headers(client: TestClient) -> dict[str, str]:
+    response = client.post(
+        "/api/auth/register",
+        json={
+            "email": f"mvp-{id(client)}@example.com",
+            "password": "TestPassw0rd!",
+            "display_name": "测试用户",
+        },
+    )
+    assert response.status_code == 200
+    token = response.json()["access_token"]
+    assert token
+    return {"Authorization": f"Bearer {token}"}
 
 
 def _pdf_with_text(text: str) -> bytes:
@@ -115,9 +136,45 @@ def test_upload_rejects_empty_extracted_text(tmp_path: Path, monkeypatch) -> Non
     assert response.json()["error"]["code"] == "empty_file_text"
 
 
-def test_chat_response_shapes(monkeypatch) -> None:
+def test_core_endpoints_require_login(tmp_path: Path, monkeypatch) -> None:
+    client = _client(tmp_path, monkeypatch, authenticate=False)
+
+    chat_response = client.post(
+        "/api/chat",
+        json={"messages": [{"role": "user", "content": "你好"}]},
+    )
+    assert chat_response.status_code == 401
+    assert chat_response.json()["error"]["code"] == "auth_required"
+
+    upload_response = client.post(
+        "/api/files/upload",
+        files={"file": ("contract.txt", b"hello contract", "text/plain")},
+    )
+    assert upload_response.status_code == 401
+    assert upload_response.json()["error"]["code"] == "auth_required"
+
+    run_response = client.post(
+        "/api/contracts/run",
+        json={"mode": "generate", "text": "生成一份服务合同"},
+    )
+    assert run_response.status_code == 401
+    assert run_response.json()["error"]["code"] == "auth_required"
+
+    export_response = client.post(
+        "/api/contracts/export/word",
+        json={
+            "type": "generate",
+            "title": "服务合同草案",
+            "payload": {"draft": "服务合同", "missing_fields": [], "pre_sign_checklist": []},
+        },
+    )
+    assert export_response.status_code == 401
+    assert export_response.json()["error"]["code"] == "auth_required"
+
+
+def test_chat_response_shapes(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr("app.services.chat.create_qwen_provider", lambda: FailingProvider())
-    client = TestClient(create_app())
+    client = _client(tmp_path, monkeypatch)
 
     review_cases = [
         "帮我审查这份合同风险",
@@ -205,8 +262,8 @@ def test_chat_response_shapes(monkeypatch) -> None:
     assert chat_response.json()["type"] == "chat"
 
 
-def test_contract_run_review_and_generate_shapes() -> None:
-    client = TestClient(create_app())
+def test_contract_run_review_and_generate_shapes(tmp_path: Path, monkeypatch) -> None:
+    client = _client(tmp_path, monkeypatch)
 
     review_response = client.post(
         "/api/contracts/run",
@@ -259,9 +316,12 @@ def test_contract_run_review_and_generate_shapes() -> None:
     assert "10000元" in text_only_generate_json["generate_result"]["draft"]
 
 
-def test_contract_generate_uses_metadata_without_treating_empty_values_as_facts(monkeypatch) -> None:
+def test_contract_generate_uses_metadata_without_treating_empty_values_as_facts(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
     monkeypatch.setattr("app.services.contracts.generate.create_qwen_provider", lambda: FailingProvider())
-    client = TestClient(create_app())
+    client = _client(tmp_path, monkeypatch)
     response = client.post(
         "/api/contracts/run",
         json={
@@ -288,8 +348,8 @@ def test_contract_generate_uses_metadata_without_treating_empty_values_as_facts(
     assert any("特殊约定" in item for item in result["pre_sign_checklist"])
 
 
-def test_word_export_can_be_opened() -> None:
-    client = TestClient(create_app())
+def test_word_export_can_be_opened(tmp_path: Path, monkeypatch) -> None:
+    client = _client(tmp_path, monkeypatch)
     response = client.post(
         "/api/contracts/export/word",
         json={

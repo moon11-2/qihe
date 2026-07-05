@@ -1,14 +1,15 @@
 from urllib.parse import quote
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Depends, Response
 
+from app.api.deps import require_current_user
 from app.core.errors import api_error
 from app.models.contracts import ContractExportRequest, ContractRunRequest, ContractRunResponse
 from app.services.contracts.export_word import export_contract_word
 from app.services.contracts.generate import run_generate
 from app.services.contracts.review import run_review
 
-router = APIRouter(prefix="/api/contracts", tags=["contracts"])
+router = APIRouter(prefix="/api/contracts", tags=["contracts"], dependencies=[Depends(require_current_user)])
 
 
 @router.post("/run", response_model=ContractRunResponse)

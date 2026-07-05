@@ -10,7 +10,32 @@ struct APIClient {
     }
 
     func health() async throws -> HealthResponse {
-        try await send(path: "api/health", method: "GET")
+        try await send(path: "api/health", method: "GET", requiresAuth: false)
+    }
+
+    func register(email: String, password: String, displayName: String?) async throws -> AuthSession {
+        let response: AuthTokenAPIResponse = try await send(
+            path: "api/auth/register",
+            method: "POST",
+            body: AuthRegisterRequest(email: email, password: password, displayName: displayName),
+            requiresAuth: false
+        )
+        return response.session
+    }
+
+    func login(email: String, password: String) async throws -> AuthSession {
+        let response: AuthTokenAPIResponse = try await send(
+            path: "api/auth/login",
+            method: "POST",
+            body: AuthLoginRequest(email: email, password: password),
+            requiresAuth: false
+        )
+        return response.session
+    }
+
+    func me() async throws -> AuthUser {
+        let response: AuthAPIUser = try await send(path: "api/auth/me", method: "GET")
+        return response.user
     }
 
     func chat(messages: [ChatMessage]) async throws -> ChatResponse {
@@ -34,8 +59,7 @@ struct APIClient {
 
         let fileData = try Data(contentsOf: fileURL)
         let boundary = "Boundary-\(UUID().uuidString)"
-        var request = URLRequest(url: url(for: "api/files/upload"))
-        request.httpMethod = "POST"
+        var request = request(for: "api/files/upload", method: "POST")
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         request.httpBody = multipartBody(
             boundary: boundary,
@@ -106,8 +130,7 @@ struct APIClient {
         payload: Payload
     ) async throws -> URL {
         let requestBody = ContractExportRequest(type: type, title: title, payload: payload)
-        var request = URLRequest(url: url(for: "api/contracts/export/word"))
-        request.httpMethod = "POST"
+        var request = request(for: "api/contracts/export/word", method: "POST")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try encoder.encode(requestBody)
 
@@ -122,23 +145,32 @@ struct APIClient {
 
     private func send<Response: Decodable>(
         path: String,
-        method: String
+        method: String,
+        requiresAuth: Bool = true
     ) async throws -> Response {
-        var request = URLRequest(url: url(for: path))
-        request.httpMethod = method
+        let request = request(for: path, method: method, requiresAuth: requiresAuth)
         return try await data(for: request)
     }
 
     private func send<Response: Decodable, Body: Encodable>(
         path: String,
         method: String,
-        body: Body
+        body: Body,
+        requiresAuth: Bool = true
     ) async throws -> Response {
-        var request = URLRequest(url: url(for: path))
-        request.httpMethod = method
+        var request = request(for: path, method: method, requiresAuth: requiresAuth)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try encoder.encode(body)
         return try await data(for: request)
+    }
+
+    private func request(for path: String, method: String, requiresAuth: Bool = true) -> URLRequest {
+        var request = URLRequest(url: url(for: path))
+        request.httpMethod = method
+        if requiresAuth, let token = AuthSessionStorage.shared.accessToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        return request
     }
 
     private func data<Response: Decodable>(for request: URLRequest) async throws -> Response {
@@ -222,6 +254,47 @@ struct APIClient {
 struct HealthResponse: Decodable, Hashable {
     let status: String
     let service: String
+}
+
+private struct AuthRegisterRequest: Encodable {
+    let email: String
+    let password: String
+    let displayName: String?
+}
+
+private struct AuthLoginRequest: Encodable {
+    let email: String
+    let password: String
+}
+
+private struct AuthTokenAPIResponse: Decodable {
+    let accessToken: String
+    let tokenType: String
+    let expiresIn: Int
+    let user: AuthAPIUser
+
+    var session: AuthSession {
+        AuthSession(
+            accessToken: accessToken,
+            tokenType: tokenType,
+            expiresIn: expiresIn,
+            user: user.user
+        )
+    }
+}
+
+private struct AuthAPIUser: Decodable {
+    let id: Int
+    let email: String
+    let displayName: String?
+
+    var user: AuthUser {
+        AuthUser(
+            id: String(id),
+            displayName: displayName?.nilIfBlank ?? email,
+            account: email
+        )
+    }
 }
 
 private struct FileUploadResponse: Decodable {
