@@ -50,23 +50,24 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
 默认后端地址是：
 
 ```txt
-http://127.0.0.1:8010
+http://47.254.244.28
 ```
 
-仓库提交了 shared Xcode Scheme，直接在 Xcode 里 Run `Qihe` 时会注入：
+仓库提交了 shared Xcode Scheme，直接在 Xcode 里 Run `Qihe` 时会注入同一个云端地址：
 
 ```txt
-QIHE_API_BASE_URL=http://127.0.0.1:8010
+QIHE_API_BASE_URL=http://47.254.244.28
 ```
 
-本机联调前请先启动后端：
+请求路径由客户端统一拼接为 `/api/...`，例如健康检查会访问：
 
-```bash
-cd backend
-uvicorn app.main:app --host 127.0.0.1 --port 8010
+```txt
+http://47.254.244.28/api/health
 ```
 
-如果 8010 被占用，或真机联调需要访问 Mac 的局域网地址，可在 Xcode Scheme 的 Run > Arguments > Environment Variables 中覆盖 `QIHE_API_BASE_URL`，例如：
+当前云端还是 HTTP IP，`Info.plist` 临时放开了 ATS 的 HTTP 访问。后续上域名和 HTTPS 后，应收紧 `NSAppTransportSecurity` 配置。
+
+如需本机调试，可在 Xcode Scheme 的 Run > Arguments > Environment Variables 中临时覆盖 `QIHE_API_BASE_URL`，例如：
 
 ```txt
 http://192.168.1.10:8010
@@ -77,3 +78,10 @@ http://192.168.1.10:8010
 ```bash
 QIHE_API_BASE_URL=http://192.168.1.10:8010 swift build
 ```
+
+## 第一阶段真机验收重点
+
+- 首页、审查、生成、对话默认连接 `http://47.254.244.28/api/...`。
+- 未登录也可以继续审查、生成和对话。
+- 首页、聊天页、审查输入页、生成输入页支持滚动、点击空白和提交后收起键盘。
+- “我的”页只提供账号前端壳，等待后端 `/api/auth/register`、`/api/auth/login`、`/api/auth/me` 合同后再接入真实 token。

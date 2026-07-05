@@ -4,6 +4,7 @@ import Foundation
 final class AppState: ObservableObject {
     @Published var path: [AppRoute] = []
     @Published var isHistoryPresented = false
+    @Published var selectedTab: RootTab = .home
 
     let apiClient: APIClient
 
@@ -12,11 +13,13 @@ final class AppState: ObservableObject {
     }
 
     func resetToHome() {
+        selectedTab = .home
         path.removeAll()
     }
 
     func openHistoryRecord(_ record: HistoryRecord) {
         isHistoryPresented = false
+        selectedTab = .home
         switch record.type {
         case .chat:
             path.append(.chat(localRecordId: record.id))
@@ -26,4 +29,10 @@ final class AppState: ObservableObject {
             path.append(.generateResult(recordId: record.id))
         }
     }
+}
+
+enum RootTab: Hashable {
+    case home
+    case history
+    case profile
 }

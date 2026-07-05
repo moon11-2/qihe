@@ -9,10 +9,15 @@ struct HomeView: View {
     @State private var isFileImporterPresented = false
     @State private var isUploading = false
     @State private var uploadError: String?
+    @FocusState private var isPromptFocused: Bool
 
     var body: some View {
         ZStack {
             QiheColor.paper.ignoresSafeArea()
+                .onTapGesture {
+                    isPromptFocused = false
+                    QiheKeyboard.dismiss()
+                }
 
             ScrollView {
                 VStack(spacing: 18) {
@@ -29,6 +34,7 @@ struct HomeView: View {
                 .padding(.top, 8)
                 .padding(.bottom, 22)
             }
+            .qiheScrollDismissesKeyboard()
         }
         .qiheInlineNavigationTitle()
         .task {
@@ -52,7 +58,9 @@ struct HomeView: View {
                 accessibilityLabel: "本地历史",
                 size: 34
             ) {
-                appState.isHistoryPresented = true
+                isPromptFocused = false
+                QiheKeyboard.dismiss()
+                appState.selectedTab = .history
             }
 
             Spacer()
@@ -65,6 +73,7 @@ struct HomeView: View {
                 prompt = ""
                 uploadedFile = nil
                 uploadError = nil
+                isPromptFocused = true
             }
         }
     }
@@ -95,8 +104,9 @@ struct HomeView: View {
                 TextField("输入合同内容，或描述你想生成的合同……", text: $prompt, axis: .vertical)
                     .font(QiheFont.body(size: 14))
                     .foregroundStyle(QiheColor.ink)
-                    .lineLimit(2...5)
-                    .frame(minHeight: 44, alignment: .topLeading)
+                    .lineLimit(1...4)
+                    .frame(minHeight: 34, alignment: .topLeading)
+                    .focused($isPromptFocused)
 
                 HStack {
                     Text("合同助手")
@@ -164,6 +174,8 @@ struct HomeView: View {
                     Spacer()
 
                     Button("审查") {
+                        isPromptFocused = false
+                        QiheKeyboard.dismiss()
                         appState.path.append(.review(prefill: nil, attachment: uploadedFile))
                     }
                     .font(QiheFont.caption(size: 12, weight: .semibold))
@@ -180,10 +192,14 @@ struct HomeView: View {
     private var shortcutEntries: some View {
         HStack(spacing: 12) {
             HomeQuickEntry(title: "合同审查", seal: "審", detail: "粘贴文本或上传\nPDF / Word / TXT") {
+                isPromptFocused = false
+                QiheKeyboard.dismiss()
                 appState.path.append(.review(prefill: nil))
             }
 
             HomeQuickEntry(title: "合同生成", seal: "擬", detail: "描述需求\n生成合同草案", accent: QiheColor.ink) {
+                isPromptFocused = false
+                QiheKeyboard.dismiss()
                 appState.path.append(.generate(prefill: nil))
             }
         }
@@ -215,7 +231,9 @@ struct HomeView: View {
                 Spacer()
 
                 Button("展开") {
-                    appState.isHistoryPresented = true
+                    isPromptFocused = false
+                    QiheKeyboard.dismiss()
+                    appState.selectedTab = .history
                 }
                 .font(QiheFont.caption(size: 12, weight: .medium))
                 .foregroundStyle(QiheColor.navy)
@@ -276,6 +294,8 @@ struct HomeView: View {
         guard !text.isEmpty else {
             return
         }
+        isPromptFocused = false
+        QiheKeyboard.dismiss()
         prompt = ""
         appState.path.append(.chat(localRecordId: nil, initialMessage: text))
     }
@@ -287,7 +307,7 @@ struct HomeView: View {
                 await upload(url)
             }
         case let .failure(error):
-            uploadError = error.localizedDescription
+            uploadError = error.qiheDisplayMessage
         }
     }
 
@@ -299,7 +319,7 @@ struct HomeView: View {
         do {
             uploadedFile = try await appState.apiClient.uploadFile(from: url)
         } catch {
-            uploadError = error.localizedDescription
+            uploadError = error.qiheDisplayMessage
         }
     }
 
@@ -309,7 +329,7 @@ struct HomeView: View {
             let response = try await appState.apiClient.health()
             healthState = response.status == "ok" ? .online(service: response.service) : .offline(message: "服务状态异常")
         } catch {
-            healthState = .offline(message: error.localizedDescription)
+            healthState = .offline(message: error.qiheDisplayMessage)
         }
     }
 }
@@ -349,6 +369,8 @@ private struct HomeQuickEntry: View {
                     .fill(accent)
                     .frame(height: 3)
                     .clipShape(RoundedRectangle(cornerRadius: 2, style: .continuous))
+                    .padding(.horizontal, 10)
+                    .padding(.top, 1)
             }
             .overlay(
                 RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous)

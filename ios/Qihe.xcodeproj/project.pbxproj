@@ -28,6 +28,9 @@
 		A00000000000000000000037 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000036 /* Assets.xcassets */; };
 		A00000000000000000000039 /* ShareSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000003A /* ShareSheet.swift */; };
 		A0000000000000000000003B /* SubjectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000003C /* SubjectView.swift */; };
+		A0000000000000000000003D /* KeyboardSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000040 /* KeyboardSupport.swift */; };
+		A0000000000000000000003E /* AuthState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000041 /* AuthState.swift */; };
+		A0000000000000000000003F /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000042 /* ProfileView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -54,6 +57,9 @@
 		A00000000000000000000038 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Resources/Info.plist; sourceTree = "<group>"; };
 		A0000000000000000000003A /* ShareSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Results/ShareSheet.swift; sourceTree = "<group>"; };
 		A0000000000000000000003C /* SubjectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Subject/SubjectView.swift; sourceTree = "<group>"; };
+		A00000000000000000000040 /* KeyboardSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/KeyboardSupport.swift; sourceTree = "<group>"; };
+		A00000000000000000000041 /* AuthState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/AuthState.swift; sourceTree = "<group>"; };
+		A00000000000000000000042 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Profile/ProfileView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -90,6 +96,8 @@
 				A00000000000000000000013 /* AppEnvironment.swift */,
 				A00000000000000000000014 /* AppRoute.swift */,
 				A00000000000000000000015 /* AppState.swift */,
+				A00000000000000000000041 /* AuthState.swift */,
+				A00000000000000000000040 /* KeyboardSupport.swift */,
 				A00000000000000000000016 /* RootView.swift */,
 				A00000000000000000000017 /* APIClient.swift */,
 				A00000000000000000000018 /* HistoryStore.swift */,
@@ -106,6 +114,7 @@
 				A0000000000000000000003A /* ShareSheet.swift */,
 				A00000000000000000000023 /* ReviewInputView.swift */,
 				A0000000000000000000003C /* SubjectView.swift */,
+				A00000000000000000000042 /* ProfileView.swift */,
 				A00000000000000000000036 /* Assets.xcassets */,
 				A00000000000000000000038 /* Info.plist */,
 			);
@@ -185,6 +194,8 @@
 				A00000000000000000000025 /* AppEnvironment.swift in Sources */,
 				A00000000000000000000026 /* AppRoute.swift in Sources */,
 				A00000000000000000000027 /* AppState.swift in Sources */,
+				A0000000000000000000003E /* AuthState.swift in Sources */,
+				A0000000000000000000003D /* KeyboardSupport.swift in Sources */,
 				A00000000000000000000028 /* RootView.swift in Sources */,
 				A00000000000000000000029 /* APIClient.swift in Sources */,
 				A0000000000000000000002A /* HistoryStore.swift in Sources */,
@@ -201,6 +212,7 @@
 				A00000000000000000000035 /* ReviewInputView.swift in Sources */,
 				A00000000000000000000039 /* ShareSheet.swift in Sources */,
 				A0000000000000000000003B /* SubjectView.swift in Sources */,
+				A0000000000000000000003F /* ProfileView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

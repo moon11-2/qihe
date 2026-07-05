@@ -24,6 +24,9 @@ struct GenerateInputView: View {
     var body: some View {
         ZStack {
             QiheColor.paper.ignoresSafeArea()
+                .onTapGesture {
+                    QiheKeyboard.dismiss()
+                }
 
             ScrollView {
                 VStack(spacing: 16) {
@@ -83,6 +86,7 @@ struct GenerateInputView: View {
                 }
                 .padding(20)
             }
+            .qiheScrollDismissesKeyboard()
         }
         .navigationTitle("合同生成")
         .qiheInlineNavigationTitle()
@@ -256,7 +260,7 @@ struct GenerateInputView: View {
                 await upload(url)
             }
         case let .failure(error):
-            errorMessage = error.localizedDescription
+            errorMessage = error.qiheDisplayMessage
         }
     }
 
@@ -268,7 +272,7 @@ struct GenerateInputView: View {
         do {
             attachment = try await appState.apiClient.uploadFile(from: url)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = error.qiheDisplayMessage
         }
     }
 
@@ -283,6 +287,7 @@ struct GenerateInputView: View {
         guard hasInput, generationTask == nil else {
             return
         }
+        QiheKeyboard.dismiss()
 
         let runID = UUID()
         let requestText = text
@@ -348,7 +353,7 @@ struct GenerateInputView: View {
             guard !isCancellation(error), activeGenerateRunID == runID else {
                 return
             }
-            errorMessage = error.localizedDescription
+            errorMessage = error.qiheDisplayMessage
         }
     }
 

@@ -700,7 +700,7 @@ extension RiskLevel {
         case .low:
             return "A"
         case .pending:
-            return "待"
+            return "未"
         case .unknown:
             return "?"
         }

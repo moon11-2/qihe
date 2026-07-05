@@ -40,7 +40,7 @@ struct HistoryView: View {
                 .padding(.vertical, 18)
             }
             .background(QiheColor.paper.ignoresSafeArea())
-            .navigationTitle("历史对话")
+            .navigationTitle("历史")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button("清空") {

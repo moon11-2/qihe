@@ -309,7 +309,7 @@ struct GenerateResultView: View {
             )
             shareDocument = ShareDocument(url: url)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = error.qiheDisplayMessage
         }
     }
 

@@ -24,11 +24,23 @@
 	<true/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>47.254.244.28</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSExceptionRequiresForwardSecrecy</key>
+				<false/>
+			</dict>
+		</dict>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>契合需要连接本机或局域网内的后端服务进行调试。</string>
+	<string>契合需要连接调试或云端后端服务。</string>
 	<key>QIHE_API_BASE_URL</key>
 	<string></string>
 	<key>UTImportedTypeDeclarations</key>

@@ -218,7 +218,7 @@ enum RiskLevel: String, Codable, CaseIterable, Hashable {
         case .low:
             return "低风险"
         case .pending:
-            return "待审查"
+            return "未评级"
         case .unknown:
             return "未标注"
         }
@@ -559,7 +559,7 @@ struct HistoryRecord: Identifiable, Codable, Hashable {
     }
 }
 
-enum JSONValue: Codable, Hashable {
+enum JSONValue: Codable, Hashable, Sendable {
     case string(String)
     case number(Double)
     case bool(Bool)

@@ -22,7 +22,7 @@ struct ReviewResultView: View {
 
                     ScrollViewReader { proxy in
                         ScrollView {
-                            VStack(alignment: .leading, spacing: 16) {
+                            VStack(alignment: .leading, spacing: 14) {
                                 if let errorMessage {
                                     ErrorBanner(message: errorMessage, retryTitle: "重试导出") {
                                         Task {
@@ -149,7 +149,7 @@ struct ReviewResultView: View {
     }
 
     private func riskTab(_ result: ReviewResult) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             reportHead(result)
             statStrip(result)
 
@@ -185,30 +185,39 @@ struct ReviewResultView: View {
     }
 
     private func reportHead(_ result: ReviewResult) -> some View {
-        PaperCard {
-            ZStack(alignment: .topTrailing) {
-                VStack(alignment: .leading, spacing: 8) {
+        PaperCard(padding: 16) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 12) {
                     Text(result.displayTitle)
                         .font(QiheFont.title(size: 20))
                         .foregroundStyle(QiheColor.ink)
-
-                    Text(result.summary?.nilIfBlank ?? "审查报告已生成，请重点查看风险卡片。")
-                        .font(QiheFont.body(size: 13))
-                        .foregroundStyle(QiheColor.inkSoft)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.trailing, 70)
 
-                    HStack(spacing: 5) {
-                        Image(systemName: "text.book.closed")
-                            .font(.system(size: 13, weight: .medium))
-                        Text("审查依据：\(result.reviewBasis?.nilIfBlank ?? "中国大陆现行法律")")
-                            .font(QiheFont.caption(size: 11))
-                    }
-                    .foregroundStyle(QiheColor.navy)
+                    Spacer(minLength: 8)
+
+                    ReviewRiskGradeStamp(level: result.riskLevel ?? .pending)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
 
-                ReviewRiskGradeStamp(level: result.riskLevel ?? .pending)
+                Text(result.summary?.nilIfBlank ?? "审查报告已生成，请重点查看风险卡片。")
+                    .font(QiheFont.body(size: 13))
+                    .foregroundStyle(QiheColor.inkSoft)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "text.book.closed")
+                        .font(.system(size: 13, weight: .medium))
+                        .padding(.top, 1)
+
+                    Text("审查依据：\(result.reviewBasis?.nilIfBlank ?? "中国大陆现行法律")")
+                        .font(QiheFont.caption(size: 11.5))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .foregroundStyle(QiheColor.navy)
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(QiheColor.navySoft.opacity(0.72))
+                .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
             }
         }
     }
@@ -229,11 +238,11 @@ struct ReviewResultView: View {
 
     private func subjectsTab(_ result: ReviewResult) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            QiheSectionHeader(title: "主体", subtitle: "合同当事人与关键信息")
+            QiheSectionHeader(title: "主体信息", subtitle: "合同当事人与关键信息")
 
             SubjectFactsPanel(result: result)
 
-            QiheSecondaryButton(title: "查看主体详情", systemImage: "person.text.rectangle") {
+            QiheSecondaryButton(title: "查看主体信息", systemImage: "person.text.rectangle") {
                 appState.path.append(.subject(recordId: recordId))
             }
         }
@@ -344,7 +353,7 @@ struct ReviewResultView: View {
             )
             shareDocument = ShareDocument(url: url)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = error.qiheDisplayMessage
         }
     }
 
@@ -387,7 +396,7 @@ private enum ReviewResultTab: CaseIterable {
         case .risks:
             return "风险"
         case .subjects:
-            return "主体"
+            return "主体信息"
         }
     }
 }
@@ -400,7 +409,9 @@ private struct ReviewRiskGradeStamp: View {
             Text(letter)
                 .font(QiheFont.title(size: 22))
             Text(level.label)
-                .font(QiheFont.title(size: 8.5))
+                .font(QiheFont.caption(size: 8.5, weight: .semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
         .foregroundStyle(level.foreground)
         .frame(width: 58, height: 58)
@@ -1134,20 +1145,31 @@ private struct RiskReportCard: View {
     var isHighlighted = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top) {
+        VStack(alignment: .leading, spacing: 11) {
+            HStack(alignment: .top, spacing: 10) {
                 Text(risk.displayTitle)
                     .font(QiheFont.title(size: 15))
                     .foregroundStyle(QiheColor.ink)
-                    .padding(.trailing, 58)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                Spacer()
+                Spacer(minLength: 8)
+
+                Text(risk.riskLevel.label)
+                    .font(QiheFont.caption(size: 10.5, weight: .semibold))
+                    .foregroundStyle(risk.riskLevel.foreground)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+                    .padding(.horizontal, 7)
+                    .frame(height: 24)
+                    .background(risk.riskLevel.background)
+                    .clipShape(Capsule())
             }
 
             if let clause = risk.clause?.nilIfBlank {
-                Text("涉及条款 · \(clause)")
-                    .font(QiheFont.caption(size: 11))
+                Text("涉及条款：\(clause)")
+                    .font(QiheFont.caption(size: 11.5))
                     .foregroundStyle(QiheColor.muted)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if let analysis = risk.displayAnalysis {
@@ -1161,7 +1183,7 @@ private struct RiskReportCard: View {
             if let replacement = risk.suggestedReplacement?.nilIfBlank {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text("修改")
-                        .font(QiheFont.title(size: 11))
+                        .font(QiheFont.caption(size: 11, weight: .semibold))
                         .foregroundStyle(QiheColor.seal)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
@@ -1171,7 +1193,7 @@ private struct RiskReportCard: View {
                         )
 
                     Text(replacement)
-                        .font(QiheFont.body(size: 12.5))
+                        .font(QiheFont.body(size: 13))
                         .foregroundStyle(QiheColor.inkSoft)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1201,19 +1223,6 @@ private struct RiskReportCard: View {
             Rectangle()
                 .fill(isHighlighted ? QiheColor.navy : risk.riskLevel.foreground)
                 .frame(width: isHighlighted ? 5 : 3.5)
-        }
-        .overlay(alignment: .topTrailing) {
-            Text(risk.riskLevel.label)
-                .font(QiheFont.title(size: 10))
-                .foregroundStyle(risk.riskLevel.foreground)
-                .padding(.horizontal, 6)
-                .frame(height: 25)
-                .overlay(
-                    RoundedRectangle(cornerRadius: QiheRadius.xs, style: .continuous)
-                        .stroke(risk.riskLevel.foreground, lineWidth: 1.5)
-                )
-                .rotationEffect(.degrees(4))
-                .padding(12)
         }
         .overlay(
             RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous)
