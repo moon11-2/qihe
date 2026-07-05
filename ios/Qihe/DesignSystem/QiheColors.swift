@@ -10,8 +10,11 @@ enum QiheColor {
     static let line = Color(hex: 0xE5E1D8)
     static let lineStrong = Color(hex: 0xD0CBBE)
     static let navy = Color(hex: 0x23405F)
+    static let navyDeep = Color(hex: 0x18334D)
+    static let navyMid = Color(hex: 0x2F5678)
     static let navySoft = Color(hex: 0xE8EEF3)
     static let seal = Color(hex: 0xC23528)
+    static let sealDeep = Color(hex: 0x9F241C)
     static let sealSoft = Color(hex: 0xF8E7E2)
     static let amber = Color(hex: 0xB07F1E)
     static let amberSoft = Color(hex: 0xF5EAD4)
@@ -21,9 +24,13 @@ enum QiheColor {
 
 enum QiheRadius {
     static let lg: CGFloat = 18
-    static let md: CGFloat = 12
+    static let md: CGFloat = 16
     static let sm: CGFloat = 10
     static let xs: CGFloat = 7
+}
+
+enum QiheLayout {
+    static let rootTabBottomInset: CGFloat = 110
 }
 
 extension Color {

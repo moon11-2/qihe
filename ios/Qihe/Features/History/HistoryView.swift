@@ -10,6 +10,8 @@ struct HistoryView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
+                    historyHeader
+
                     if !historyStore.records.isEmpty {
                         filterPicker
                     }
@@ -37,20 +39,10 @@ struct HistoryView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 18)
+                .padding(.top, 6)
+                .padding(.bottom, QiheLayout.rootTabBottomInset)
             }
             .background(QiheColor.paper.ignoresSafeArea())
-            .navigationTitle("历史")
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button("清空") {
-                        isClearConfirmationPresented = true
-                    }
-                    .font(QiheFont.body(size: 15, weight: .semibold))
-                    .foregroundStyle(historyStore.records.isEmpty ? QiheColor.muted : QiheColor.seal)
-                    .disabled(historyStore.records.isEmpty)
-                }
-            }
             .confirmationDialog(
                 "清空全部历史？",
                 isPresented: $isClearConfirmationPresented,
@@ -69,6 +61,32 @@ struct HistoryView: View {
 
     private var filteredRecords: [HistoryRecord] {
         historyStore.records.filter { selectedFilter.includes($0) }
+    }
+
+    private var historyHeader: some View {
+        HStack(alignment: .center) {
+            Text("历史")
+                .font(QiheFont.title(size: 34))
+                .foregroundStyle(QiheColor.ink)
+                .lineLimit(1)
+
+            Spacer()
+
+            Button("清空") {
+                isClearConfirmationPresented = true
+            }
+            .font(QiheFont.body(size: 15, weight: .semibold))
+            .foregroundStyle(historyStore.records.isEmpty ? QiheColor.muted : QiheColor.seal)
+            .padding(.horizontal, 16)
+            .frame(height: 38)
+            .background(QiheColor.card.opacity(historyStore.records.isEmpty ? 0.55 : 1))
+            .clipShape(Capsule())
+            .shadow(color: .black.opacity(historyStore.records.isEmpty ? 0 : 0.04), radius: 12, x: 0, y: 6)
+            .disabled(historyStore.records.isEmpty)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 4)
+        .padding(.bottom, 10)
     }
 
     private var filterPicker: some View {

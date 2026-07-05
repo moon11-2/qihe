@@ -184,7 +184,7 @@ struct ChatView: View {
 
     private var nextStepDetail: String {
         if isSending {
-            return "正在等待后端回复"
+            return "正在生成回复"
         }
 
         if !suggestedModes.isEmpty {

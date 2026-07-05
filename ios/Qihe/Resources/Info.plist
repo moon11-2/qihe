@@ -40,7 +40,7 @@
 		</dict>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>契合需要连接调试或云端后端服务。</string>
+	<string>契合需要连接云端服务以完成合同审查和生成。</string>
 	<key>QIHE_API_BASE_URL</key>
 	<string></string>
 	<key>UTImportedTypeDeclarations</key>

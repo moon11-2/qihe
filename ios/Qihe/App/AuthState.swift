@@ -26,7 +26,7 @@ final class AuthStore: ObservableObject {
             return
         }
 
-        message = "账号接口待后端合同确认后接入；审查、生成和对话仍可直接使用。"
+        message = "账号功能正在内测中，合同审查、生成和对话可继续使用。"
     }
 }
 
@@ -65,4 +65,3 @@ struct AuthUser: Equatable, Hashable {
     let displayName: String
     let account: String
 }
-

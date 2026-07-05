@@ -112,16 +112,18 @@ struct ReviewInputView: View {
     }
 
     private var formTitle: some View {
-        VStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             Text("合同审查")
                 .font(QiheFont.title(size: 27))
                 .foregroundStyle(QiheColor.ink)
 
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(QiheColor.navy)
-                .frame(width: 44, height: 3)
+            Text("上传或粘贴合同，生成风险报告与修改建议。")
+                .font(QiheFont.body(size: 13))
+                .foregroundStyle(QiheColor.muted)
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 8)
         .padding(.bottom, 4)
     }

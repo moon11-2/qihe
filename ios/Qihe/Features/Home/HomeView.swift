@@ -20,19 +20,18 @@ struct HomeView: View {
                 }
 
             ScrollView {
-                VStack(spacing: 18) {
-                    topBar
-                    hero
+                VStack(spacing: 20) {
+                    brandTopBar
+                    heroStatement
                     chatEntry
                     uploadRecommendation
-                    shortcutEntries
-                    trustLine
+                    coreActions
                     recentRecords
                     healthLine
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
-                .padding(.bottom, 22)
+                .padding(.bottom, QiheLayout.rootTabBottomInset)
             }
             .qiheScrollDismissesKeyboard()
         }
@@ -51,72 +50,61 @@ struct HomeView: View {
         }
     }
 
-    private var topBar: some View {
-        HStack {
-            QiheIconCircleButton(
-                systemImage: "sidebar.left",
-                accessibilityLabel: "本地历史",
-                size: 34
-            ) {
-                isPromptFocused = false
-                QiheKeyboard.dismiss()
-                appState.selectedTab = .history
-            }
+    private var brandTopBar: some View {
+        HStack(alignment: .center) {
+            QiheBrandLockup(markSize: 36, titleSize: 22)
 
-            Spacer()
+            Spacer(minLength: 12)
 
-            QiheIconCircleButton(
-                systemImage: "square.and.pencil",
-                accessibilityLabel: "新建对话",
-                size: 34
-            ) {
-                prompt = ""
-                uploadedFile = nil
-                uploadError = nil
-                isPromptFocused = true
-            }
+            QiheSloganLockup(compact: true)
         }
+        .padding(.top, 4)
     }
 
-    private var hero: some View {
-        VStack(spacing: 8) {
-            SealMark(size: 64)
-                .rotationEffect(.degrees(-3))
+    private var heroStatement: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("今天要处理哪份合同？")
+                .font(QiheFont.title(size: 27))
+                .foregroundStyle(QiheColor.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
 
-            VStack(spacing: 4) {
-                Text("契合")
-                    .font(QiheFont.title(size: 24))
-                    .foregroundStyle(QiheColor.ink)
-
-                Text("AI 合同审查与生成助手")
-                    .font(QiheFont.caption(size: 11, weight: .medium))
-                    .foregroundStyle(QiheColor.muted.opacity(0.7))
-            }
+            Text("输入、上传，或直接选择审查和生成。")
+                .font(QiheFont.body(size: 13))
+                .foregroundStyle(QiheColor.muted)
+                .lineLimit(1)
+                .minimumScaleFactor(0.86)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 8)
-        .padding(.bottom, 0)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 4)
     }
 
     private var chatEntry: some View {
         PaperCard(padding: 14) {
-            VStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 13) {
+                HStack(spacing: 8) {
+                    QiheLogoMark(size: 20)
+
+                    Text("契合")
+                        .font(QiheFont.body(size: 13, weight: .semibold))
+                        .foregroundStyle(QiheColor.navy)
+
+                    Spacer(minLength: 0)
+                }
+
                 TextField("输入合同内容，或描述你想生成的合同……", text: $prompt, axis: .vertical)
-                    .font(QiheFont.body(size: 14))
+                    .font(QiheFont.body(size: 16))
                     .foregroundStyle(QiheColor.ink)
-                    .lineLimit(1...4)
-                    .frame(minHeight: 34, alignment: .topLeading)
+                    .lineLimit(2...5)
+                    .frame(minHeight: 60, alignment: .topLeading)
                     .focused($isPromptFocused)
 
                 HStack {
-                    Text("合同助手")
+                    Text(uploadedFile == nil ? "可粘贴文本，也可上传 PDF / Word / TXT" : "已上传文件，可进入审查")
                         .font(QiheFont.caption(size: 11.5, weight: .medium))
-                        .foregroundStyle(QiheColor.inkSoft)
-                        .padding(.horizontal, 11)
-                        .frame(height: 26)
-                        .background(QiheColor.card)
-                        .clipShape(Capsule())
-                        .overlay(Capsule().stroke(QiheColor.lineStrong, lineWidth: 1))
+                        .foregroundStyle(QiheColor.muted)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
 
                     Spacer()
 
@@ -136,11 +124,73 @@ struct HomeView: View {
                             accessibilityLabel: "发送",
                             size: 34,
                             isPrimary: true,
-                            isDisabled: prompt.trimmedForInput.isEmpty
+                            isDisabled: !canSendPrompt
                         ) {
                             sendPrompt()
                         }
                     }
+                }
+            }
+        }
+    }
+
+    private var coreActions: some View {
+        PaperCard(padding: 14) {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("核心入口")
+                    .font(QiheFont.body(size: 15, weight: .semibold))
+                    .foregroundStyle(QiheColor.ink)
+
+                HStack(spacing: 12) {
+                    Button {
+                        isPromptFocused = false
+                        QiheKeyboard.dismiss()
+                        appState.path.append(.review(prefill: nil))
+                    } label: {
+                        Text("合同审查")
+                            .font(QiheFont.body(size: 15, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.82)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 42)
+                            .background(QiheColor.navy)
+                            .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        isPromptFocused = false
+                        QiheKeyboard.dismiss()
+                        appState.path.append(.generate(prefill: nil))
+                    } label: {
+                        Text("合同生成")
+                            .font(QiheFont.body(size: 15, weight: .semibold))
+                            .foregroundStyle(QiheColor.ink)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.82)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 42)
+                            .background(QiheColor.paper)
+                            .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous)
+                                    .stroke(QiheColor.lineStrong, lineWidth: 1)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.shield")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(QiheColor.navy)
+
+                    Text("逐条审查 · 标注法条依据 · 历史仅本地保存")
+                        .font(QiheFont.caption(size: 11))
+                        .foregroundStyle(QiheColor.muted)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.82)
                 }
             }
         }
@@ -189,38 +239,6 @@ struct HomeView: View {
         }
     }
 
-    private var shortcutEntries: some View {
-        HStack(spacing: 12) {
-            HomeQuickEntry(title: "合同审查", seal: "審", detail: "粘贴文本或上传\nPDF / Word / TXT") {
-                isPromptFocused = false
-                QiheKeyboard.dismiss()
-                appState.path.append(.review(prefill: nil))
-            }
-
-            HomeQuickEntry(title: "合同生成", seal: "擬", detail: "描述需求\n生成合同草案", accent: QiheColor.ink) {
-                isPromptFocused = false
-                QiheKeyboard.dismiss()
-                appState.path.append(.generate(prefill: nil))
-            }
-        }
-    }
-
-    private var trustLine: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "checkmark.shield")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(QiheColor.navy)
-
-            Text("逐条审查 · 标注法条依据 · 历史仅本地保存")
-                .font(QiheFont.caption(size: 10.5))
-                .foregroundStyle(QiheColor.muted)
-                .lineLimit(1)
-                .minimumScaleFactor(0.82)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.top, -4)
-    }
-
     private var recentRecords: some View {
         VStack(spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
@@ -250,10 +268,12 @@ struct HomeView: View {
                     .padding(.vertical, 2)
                 }
             } else {
-                VStack(spacing: 0) {
-                    ForEach(Array(historyStore.records.prefix(3))) { record in
-                        HomeRecentRecordRow(record: record) {
-                            appState.openHistoryRecord(record)
+                PaperCard(padding: 0) {
+                    VStack(spacing: 0) {
+                        ForEach(Array(historyStore.records.prefix(3))) { record in
+                            HomeRecentRecordRow(record: record) {
+                                appState.openHistoryRecord(record)
+                            }
                         }
                     }
                 }
@@ -286,18 +306,28 @@ struct HomeView: View {
             .foregroundStyle(QiheColor.navy)
             .disabled(healthState == .checking)
         }
-        .padding(.top, 2)
+        .padding(.top, -2)
+    }
+
+    private var canSendPrompt: Bool {
+        prompt.trimmedForInput.nilIfBlank != nil || uploadedFile != nil
     }
 
     private func sendPrompt() {
         let text = prompt.trimmedForInput
-        guard !text.isEmpty else {
+        guard !text.isEmpty || uploadedFile != nil else {
             return
         }
         isPromptFocused = false
         QiheKeyboard.dismiss()
         prompt = ""
-        appState.path.append(.chat(localRecordId: nil, initialMessage: text))
+
+        if let uploadedFile {
+            self.uploadedFile = nil
+            appState.path.append(.review(prefill: text.nilIfBlank, attachment: uploadedFile))
+        } else {
+            appState.path.append(.chat(localRecordId: nil, initialMessage: text))
+        }
     }
 
     private func handleFileImport(_ result: Result<URL, Error>) {
@@ -334,53 +364,6 @@ struct HomeView: View {
     }
 }
 
-private struct HomeQuickEntry: View {
-    let title: String
-    let seal: String
-    let detail: String
-    var accent: Color = QiheColor.navy
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .top) {
-                    Text(seal)
-                        .font(QiheFont.title(size: 12))
-                        .foregroundStyle(QiheColor.seal)
-                    Spacer()
-                }
-
-                Text(title)
-                    .font(QiheFont.title(size: 16))
-                    .foregroundStyle(QiheColor.ink)
-
-                Text(detail)
-                    .font(QiheFont.caption(size: 11.5))
-                    .foregroundStyle(QiheColor.muted)
-                    .lineSpacing(2)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(14)
-            .background(QiheColor.card)
-            .clipShape(RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous))
-            .overlay(alignment: .top) {
-                Rectangle()
-                    .fill(accent)
-                    .frame(height: 3)
-                    .clipShape(RoundedRectangle(cornerRadius: 2, style: .continuous))
-                    .padding(.horizontal, 10)
-                    .padding(.top, 1)
-            }
-            .overlay(
-                RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous)
-                    .stroke(QiheColor.line, lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
-    }
-}
-
 private struct HomeRecentRecordRow: View {
     let record: HistoryRecord
     let action: () -> Void
@@ -391,7 +374,7 @@ private struct HomeRecentRecordRow: View {
                 Image(systemName: iconName)
                     .font(.system(size: 17, weight: .medium))
                     .foregroundStyle(QiheColor.inkSoft)
-                    .frame(width: 30, height: 35)
+                    .frame(width: 34, height: 36)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(record.title.nilIfBlank ?? "未命名记录")
@@ -409,13 +392,15 @@ private struct HomeRecentRecordRow: View {
                 Text(stampText)
                     .font(QiheFont.title(size: 10))
                     .foregroundStyle(stampColor)
-                    .padding(.horizontal, 7)
+                    .padding(.horizontal, 8)
+                    .frame(minWidth: 42)
                     .frame(height: 24)
                     .overlay(
                         RoundedRectangle(cornerRadius: QiheRadius.xs, style: .continuous)
                             .stroke(stampColor, lineWidth: 1)
                     )
             }
+            .padding(.horizontal, 14)
             .padding(.vertical, 12)
             .contentShape(Rectangle())
         }
@@ -424,6 +409,7 @@ private struct HomeRecentRecordRow: View {
             Rectangle()
                 .fill(QiheColor.line)
                 .frame(height: 1)
+                .padding(.horizontal, 14)
         }
     }
 
@@ -443,7 +429,7 @@ private struct HomeRecentRecordRow: View {
         case .chat:
             return "对话"
         case .review:
-            return "審畢"
+            return "已审"
         case .generate:
             return "草案"
         }
@@ -483,14 +469,14 @@ private enum HealthState: Equatable {
         }
     }
 
-    func compactDetail(baseURL: URL) -> String {
+    func compactDetail(baseURL _: URL) -> String {
         switch self {
         case .checking:
-            return "连接中 · \(baseURL.absoluteString)"
-        case let .online(service):
-            return "\(service) 已连接"
+            return "正在连接云端服务"
+        case .online:
+            return "云端服务已连接"
         case let .offline(message):
-            return "离线可看本地历史 · \(message)"
+            return "离线可查看本地历史 · \(message)"
         }
     }
 }

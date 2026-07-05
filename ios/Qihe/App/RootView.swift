@@ -31,6 +31,10 @@ struct RootView: View {
             .tag(RootTab.profile)
         }
         .tint(QiheColor.navy)
+        #if os(iOS)
+        .toolbarBackground(QiheColor.paper, for: .tabBar)
+        .toolbarBackground(.visible, for: .tabBar)
+        #endif
     }
 
     @ViewBuilder

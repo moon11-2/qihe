@@ -2,7 +2,6 @@ import SwiftUI
 
 struct ProfileView: View {
     @EnvironmentObject private var authStore: AuthStore
-    @EnvironmentObject private var appState: AppState
     @State private var emailOrPhone = ""
     @State private var password = ""
     @State private var displayName = ""
@@ -17,13 +16,13 @@ struct ProfileView: View {
                 }
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 20) {
                     header
                     authCard
-                    apiNotice
-                    handoffFields
                 }
-                .padding(20)
+                .padding(.horizontal, 20)
+                .padding(.top, 20)
+                .padding(.bottom, QiheLayout.rootTabBottomInset)
             }
             .qiheScrollDismissesKeyboard()
         }
@@ -32,27 +31,21 @@ struct ProfileView: View {
     }
 
     private var header: some View {
-        PaperCard(padding: 16) {
-            HStack(spacing: 14) {
-                SealMark(size: 48)
+        PaperCard(padding: 18) {
+            HStack(alignment: .center, spacing: 16) {
+                QiheBrandLockup(markSize: 44, titleSize: 23)
 
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("契合账号")
-                        .font(QiheFont.title(size: 20))
-                        .foregroundStyle(QiheColor.ink)
+                Spacer(minLength: 10)
 
-                    Text("可选登录；不影响合同审查、生成和过程对话。")
-                        .font(QiheFont.body(size: 13))
-                        .foregroundStyle(QiheColor.muted)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                QiheSloganLockup()
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
     private var authCard: some View {
-        PaperCard(padding: 14) {
-            VStack(alignment: .leading, spacing: 14) {
+        PaperCard(padding: 18) {
+            VStack(alignment: .leading, spacing: 16) {
                 Picker("账号操作", selection: Binding(
                     get: { authStore.mode },
                     set: { authStore.switchMode($0) }
@@ -63,7 +56,7 @@ struct ProfileView: View {
                 }
                 .pickerStyle(.segmented)
 
-                VStack(spacing: 12) {
+                VStack(spacing: 14) {
                     profileField(
                         title: "账号",
                         placeholder: "手机号或邮箱",
@@ -116,42 +109,6 @@ struct ProfileView: View {
         }
     }
 
-    private var apiNotice: some View {
-        PaperCard(padding: 14) {
-            VStack(alignment: .leading, spacing: 9) {
-                Label("当前为账号前端壳", systemImage: "person.crop.circle.badge.clock")
-                    .font(QiheFont.body(size: 15, weight: .semibold))
-                    .foregroundStyle(QiheColor.ink)
-
-                Text("后端接口确认后再接入真实登录态和 Bearer Token；本阶段不写死 token，也不要求登录后才能使用核心功能。")
-                    .font(QiheFont.body(size: 13))
-                    .foregroundStyle(QiheColor.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                QiheSecondaryButton(title: "回到首页", systemImage: "house") {
-                    appState.resetToHome()
-                }
-            }
-        }
-    }
-
-    private var handoffFields: some View {
-        PaperCard(padding: 14) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("等待后端确认")
-                    .font(QiheFont.body(size: 15, weight: .semibold))
-                    .foregroundStyle(QiheColor.ink)
-
-                VStack(alignment: .leading, spacing: 7) {
-                    handoffRow("注册字段", "account / password / display_name")
-                    handoffRow("登录字段", "account / password")
-                    handoffRow("登录返回", "access_token / token_type / user")
-                    handoffRow("用户信息", "id / display_name / account")
-                }
-            }
-        }
-    }
-
     private func profileField(
         title: String,
         placeholder: String,
@@ -176,7 +133,7 @@ struct ProfileView: View {
             .font(QiheFont.body(size: 14))
             .foregroundStyle(QiheColor.ink)
             .padding(.horizontal, 12)
-            .frame(height: 42)
+            .frame(height: 46)
             .background(QiheColor.paper)
             .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
             .overlay(
@@ -186,19 +143,6 @@ struct ProfileView: View {
         }
     }
 
-    private func handoffRow(_ label: String, _ value: String) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Text(label)
-                .font(QiheFont.caption(size: 12, weight: .semibold))
-                .foregroundStyle(QiheColor.navy)
-                .frame(width: 66, alignment: .leading)
-
-            Text(value)
-                .font(QiheFont.caption(size: 12))
-                .foregroundStyle(QiheColor.inkSoft)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
 }
 
 private enum ProfileField: Hashable {

@@ -157,7 +157,7 @@ struct ReviewResultView: View {
                 PaperCard {
                     EmptyStateView(
                         title: "暂无风险条目",
-                        detail: "后端未返回风险列表时，会保留摘要、审查依据和原文。"
+                        detail: "暂未识别到风险条目，仍会保留摘要、审查依据和原文。"
                     )
                 }
             } else {
