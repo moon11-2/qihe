@@ -43,7 +43,7 @@ struct SubjectView: View {
                 .padding(24)
             }
         }
-        .navigationTitle("主体")
+        .navigationTitle("主体信息")
         .qiheInlineNavigationTitle()
     }
 }

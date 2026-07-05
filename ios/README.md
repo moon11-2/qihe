@@ -61,6 +61,12 @@ QIHE_API_BASE_URL=https://api.qihe1.xyz
 
 这个值不要附带 `/api`，因为客户端请求路径已经包含 `/api/...`。
 
+请求路径由客户端统一拼接为 `/api/...`，例如健康检查会访问：
+
+```txt
+https://api.qihe1.xyz/api/health
+```
+
 本机联调前请先启动后端：
 
 ```bash
@@ -87,3 +93,10 @@ http://192.168.1.10:8010
 ```bash
 QIHE_API_BASE_URL=http://192.168.1.10:8010 swift build
 ```
+
+## 第一阶段真机验收重点
+
+- 首页、审查、生成、对话默认连接 `https://api.qihe1.xyz/api/...`。
+- 未登录也可以继续审查、生成和对话。
+- 首页、聊天页、审查输入页、生成输入页支持滚动、点击空白和提交后收起键盘。
+- “我的”页目前只提供账号前端壳；后续可接入后端 `/api/auth/register`、`/api/auth/login`、`/api/auth/me` 和真实 token。

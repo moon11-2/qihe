@@ -144,7 +144,11 @@ struct APIClient {
     private func data<Response: Decodable>(for request: URLRequest) async throws -> Response {
         let (data, response) = try await session.data(for: request)
         try validate(response: response, data: data)
-        return try decoder.decode(Response.self, from: data)
+        do {
+            return try decoder.decode(Response.self, from: data)
+        } catch {
+            throw APIClientError.invalidResponse
+        }
     }
 
     private func validate(response: URLResponse, data: Data) throws {
@@ -247,14 +251,46 @@ private struct APIErrorDetail: Decodable {
 enum APIClientError: LocalizedError {
     case unsupportedFileType
     case server(statusCode: Int, detail: String)
+    case invalidResponse
 
     var errorDescription: String? {
         switch self {
         case .unsupportedFileType:
             return "仅支持 PDF、Word/DOCX 和 TXT 文件。"
         case let .server(statusCode, detail):
-            return "请求失败（\(statusCode)）：\(detail)"
+            return "服务器返回异常（\(statusCode)）：\(detail)"
+        case .invalidResponse:
+            return "服务器返回异常"
         }
+    }
+}
+
+extension Error {
+    var qiheDisplayMessage: String {
+        if let urlError = self as? URLError {
+            switch urlError.code {
+            case .timedOut:
+                return "请求超时"
+            case .cannotConnectToHost,
+                 .cannotFindHost,
+                 .dnsLookupFailed,
+                 .networkConnectionLost,
+                 .notConnectedToInternet:
+                return "无法连接服务器"
+            case .badServerResponse:
+                return "服务器返回异常"
+            case .cancelled:
+                return "请求已取消"
+            default:
+                return "请求失败，请稍后重试"
+            }
+        }
+
+        if self is DecodingError {
+            return "服务器返回异常"
+        }
+
+        return localizedDescription.nilIfBlank ?? "请求失败，请稍后重试"
     }
 }
 

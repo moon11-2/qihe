@@ -4,19 +4,137 @@ struct SealMark: View {
     let size: CGFloat
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: size * 0.18, style: .continuous)
-                .fill(QiheColor.seal)
+        QiheLogoMark(size: size)
+            .frame(width: size, height: size)
+    }
+}
 
-            RoundedRectangle(cornerRadius: size * 0.18, style: .continuous)
-                .stroke(.white.opacity(0.76), lineWidth: max(1, size * 0.035))
-                .padding(size * 0.12)
+struct QiheLogoMark: View {
+    let size: CGFloat
 
-            Text("契")
-                .font(QiheFont.seal(size: size * 0.52))
-                .foregroundStyle(.white)
+    var body: some View {
+        Canvas { context, canvasSize in
+            let scale = min(canvasSize.width, canvasSize.height) / 54
+
+            func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+                CGPoint(
+                    x: canvasSize.width / 2 + x * scale,
+                    y: canvasSize.height / 2 + y * scale
+                )
+            }
+
+            var upperFold = Path()
+            upperFold.move(to: point(-23, -11))
+            upperFold.addLine(to: point(-4, -25))
+            upperFold.addLine(to: point(24, -6))
+            upperFold.addLine(to: point(11, 4))
+            upperFold.addLine(to: point(-5, -7))
+            upperFold.addLine(to: point(-18, 4))
+            upperFold.closeSubpath()
+
+            var lowerFold = Path()
+            lowerFold.move(to: point(-18, 4))
+            lowerFold.addLine(to: point(-5, -7))
+            lowerFold.addLine(to: point(15, 7))
+            lowerFold.addLine(to: point(-4, 25))
+            lowerFold.addLine(to: point(-24, 9))
+            lowerFold.closeSubpath()
+
+            var accentFold = Path()
+            accentFold.move(to: point(15, 7))
+            accentFold.addLine(to: point(24, -6))
+            accentFold.addLine(to: point(19, 17))
+            accentFold.addLine(to: point(-4, 25))
+            accentFold.closeSubpath()
+
+            context.fill(upperFold, with: .color(QiheColor.navyDeep))
+            context.fill(lowerFold, with: .color(QiheColor.navyMid))
+            context.fill(accentFold, with: .color(QiheColor.seal))
+
+            let dotSize = 9.6 * scale
+            let dotRect = CGRect(
+                x: canvasSize.width / 2 - dotSize / 2,
+                y: canvasSize.height / 2 - dotSize / 2,
+                width: dotSize,
+                height: dotSize
+            )
+            context.fill(Path(ellipseIn: dotRect), with: .color(QiheColor.card))
         }
         .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+}
+
+struct QiheBrandLockup: View {
+    var markSize: CGFloat = 36
+    var titleSize: CGFloat = 22
+    var subtitle = "CONTRACT AI"
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 8) {
+            QiheLogoMark(size: markSize)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("契合")
+                    .font(QiheFont.title(size: titleSize))
+                    .foregroundStyle(QiheColor.ink)
+                    .lineLimit(1)
+
+                Text(subtitle)
+                    .font(QiheFont.caption(size: max(7.5, titleSize * 0.34), weight: .semibold))
+                    .foregroundStyle(QiheColor.muted)
+                    .lineLimit(1)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("契合")
+    }
+}
+
+struct QiheSloganLockup: View {
+    var compact = false
+
+    var body: some View {
+        HStack(alignment: .center, spacing: compact ? 8 : 10) {
+            sloganMark
+
+            VStack(alignment: .leading, spacing: compact ? 1 : 2) {
+                Text("您最专业的")
+                    .font(QiheFont.caption(size: compact ? 10.5 : 11.5, weight: .medium))
+                    .foregroundStyle(QiheColor.inkSoft)
+                    .lineLimit(1)
+
+                Text("合同伙伴")
+                    .font(QiheFont.body(size: compact ? 13 : 14, weight: .semibold))
+                    .foregroundStyle(QiheColor.navy)
+                    .lineLimit(1)
+            }
+        }
+        .fixedSize(horizontal: true, vertical: true)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("您最专业的合同伙伴")
+    }
+
+    private var sloganMark: some View {
+        ZStack(alignment: .center) {
+            RoundedRectangle(cornerRadius: compact ? 1.6 : 2, style: .continuous)
+                .fill(QiheColor.seal)
+                .frame(width: compact ? 4 : 5, height: compact ? 27 : 31)
+                .rotationEffect(.degrees(-7))
+
+            RoundedRectangle(cornerRadius: compact ? 1.5 : 1.8, style: .continuous)
+                .fill(QiheColor.navy)
+                .frame(width: compact ? 4 : 5, height: compact ? 14 : 16)
+                .offset(x: compact ? 6 : 7, y: compact ? 6 : 7)
+                .rotationEffect(.degrees(-7))
+
+            Circle()
+                .fill(QiheColor.card)
+                .frame(width: compact ? 3.5 : 4.2, height: compact ? 3.5 : 4.2)
+                .offset(x: compact ? 2.6 : 3, y: compact ? -3 : -3.4)
+        }
+        .frame(width: compact ? 17 : 20, height: compact ? 31 : 35)
+        .accessibilityHidden(true)
     }
 }
 
@@ -700,7 +818,7 @@ extension RiskLevel {
         case .low:
             return "A"
         case .pending:
-            return "待"
+            return "未"
         case .unknown:
             return "?"
         }

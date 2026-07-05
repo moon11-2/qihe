@@ -18,6 +18,7 @@ struct ChatView: View {
     @State private var isSending = false
     @State private var didRestoreHistory = false
     @State private var didSubmitInitialMessage = false
+    @FocusState private var isInputFocused: Bool
 
     init(localRecordId: UUID?, initialMessage: String? = nil, apiClient: APIClient = .local) {
         self.localRecordId = localRecordId
@@ -29,6 +30,10 @@ struct ChatView: View {
     var body: some View {
         ZStack {
             QiheColor.paper.ignoresSafeArea()
+                .onTapGesture {
+                    isInputFocused = false
+                    QiheKeyboard.dismiss()
+                }
 
             ScrollViewReader { proxy in
                 ScrollView {
@@ -59,6 +64,11 @@ struct ChatView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 18)
+                }
+                .qiheScrollDismissesKeyboard()
+                .onTapGesture {
+                    isInputFocused = false
+                    QiheKeyboard.dismiss()
                 }
                 .onChange(of: messages) {
                     scrollToBottom(proxy)
@@ -130,6 +140,7 @@ struct ChatView: View {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .stroke(QiheColor.line, lineWidth: 1)
                     )
+                    .focused($isInputFocused)
                     .disabled(isSending)
 
                 Button {
@@ -173,7 +184,7 @@ struct ChatView: View {
 
     private var nextStepDetail: String {
         if isSending {
-            return "正在等待后端回复"
+            return "正在生成回复"
         }
 
         if !suggestedModes.isEmpty {
@@ -219,6 +230,8 @@ struct ChatView: View {
         guard !isSending, !text.isEmpty else {
             return
         }
+        isInputFocused = false
+        QiheKeyboard.dismiss()
         input = ""
         submitUserText(text)
     }
@@ -293,7 +306,7 @@ struct ChatView: View {
             errorMessage = nil
         } catch {
             lastFailedUserMessageId = failedUserMessageId
-            errorMessage = error.localizedDescription.nilIfBlank ?? "发送失败，请稍后重试。"
+            errorMessage = error.qiheDisplayMessage.nilIfBlank ?? "发送失败，请稍后重试。"
         }
 
         persistMessages()

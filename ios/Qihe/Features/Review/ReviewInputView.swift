@@ -27,6 +27,9 @@ struct ReviewInputView: View {
     var body: some View {
         ZStack {
             QiheColor.paper.ignoresSafeArea()
+                .onTapGesture {
+                    QiheKeyboard.dismiss()
+                }
 
             ScrollView {
                 VStack(spacing: 14) {
@@ -55,8 +58,8 @@ struct ReviewInputView: View {
                                 isDone: hasText
                             )
                             ProcessNode(
-                                title: "识别主体",
-                                detail: attachment == nil ? "上传文件后可辅助识别合同来源。" : "已上传 \(attachment?.filename ?? "合同文件")。",
+                                title: "识别主体信息",
+                                detail: attachment == nil ? "上传文件后可辅助识别主体信息。" : "已上传 \(attachment?.filename ?? "合同文件")。",
                                 isDone: attachment != nil
                             )
                             ProcessNode(
@@ -82,6 +85,7 @@ struct ReviewInputView: View {
                 }
                 .padding(20)
             }
+            .qiheScrollDismissesKeyboard()
         }
         .navigationTitle("合同审查")
         .qiheInlineNavigationTitle()
@@ -108,16 +112,18 @@ struct ReviewInputView: View {
     }
 
     private var formTitle: some View {
-        VStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             Text("合同审查")
                 .font(QiheFont.title(size: 27))
                 .foregroundStyle(QiheColor.ink)
 
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(QiheColor.navy)
-                .frame(width: 44, height: 3)
+            Text("上传或粘贴合同，生成风险报告与修改建议。")
+                .font(QiheFont.body(size: 13))
+                .foregroundStyle(QiheColor.muted)
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 8)
         .padding(.bottom, 4)
     }
@@ -401,7 +407,7 @@ struct ReviewInputView: View {
                 await upload(url)
             }
         case let .failure(error):
-            errorMessage = error.localizedDescription
+            errorMessage = error.qiheDisplayMessage
         }
     }
 
@@ -413,7 +419,7 @@ struct ReviewInputView: View {
         do {
             attachment = try await appState.apiClient.uploadFile(from: url)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = error.qiheDisplayMessage
         }
     }
 
@@ -427,6 +433,7 @@ struct ReviewInputView: View {
         guard hasInput, !isRunning else {
             return
         }
+        QiheKeyboard.dismiss()
         migrateExtraInfoIfNeeded()
         let token = UUID()
         activeReviewToken = token
@@ -489,7 +496,7 @@ struct ReviewInputView: View {
             if isCancellation(error) || Task.isCancelled {
                 return
             }
-            errorMessage = error.localizedDescription
+            errorMessage = error.qiheDisplayMessage
         }
     }
 
