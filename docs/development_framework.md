@@ -2,10 +2,10 @@
 
 ## 当前 Git 基线
 
-- 仓库根目录：`/Users/xiejackson/Documents/网页`
+- 仓库根目录：仓库当前根目录
 - 主分支：`main`
-- 项目目录：`qihe/`
-- 原始设计与开发文档：`qihe/docs/reference/`
+- 项目目录：仓库根目录
+- 原始设计与开发文档：`docs/reference/`
 - 第一阶段目标：先保证骨架、边界、接口形状和验收方式稳定，再进入具体业务开发。
 
 建议后续开发分支命名：
@@ -22,11 +22,11 @@ codex/export-word
 
 | 角色 | 负责范围 | 主要改动路径 | 完成标准 |
 | --- | --- | --- | --- |
-| 产品负责人 | 产品边界、页面文案、验收结论 | `qihe/docs/`、设计稿说明 | 确认只做 MVP 范围，不加入登录、会员、法律检索等扩展功能 |
-| 后端开发 | FastAPI、文件处理、AI 网关、Word 导出 | `qihe/backend/app/` | API 按文档返回稳定结构，测试通过 |
+| 产品负责人 | 产品边界、页面文案、验收结论 | `docs/`、设计稿说明 | 确认只做 MVP 范围，不加入登录、会员、法律检索等扩展功能 |
+| 后端开发 | FastAPI、文件处理、AI 网关、Word 导出 | `backend/app/` | API 按文档返回稳定结构，测试通过 |
 | AI/Prompt 开发 | 千问 provider、审查/生成 prompt、JSON 稳定性 | `services/llm/`、`prompts/` | 审查和生成不能直接透传模型原文，必须结构化 |
-| iOS 开发 | SwiftUI 页面、导航、本地历史、文件选择、分享导出 | `qihe/ios/Qihe/` | 页面符合 v3 视觉基准，历史只保存在本地 |
-| QA/验收 | 核心路径、异常路径、真机体验 | `qihe/docs/`、测试记录 | 核心流程可走通，禁用能力没有入口 |
+| iOS 开发 | SwiftUI 页面、导航、本地历史、文件选择、分享导出 | `ios/Qihe/` | 页面符合 v3 视觉基准，历史只保存在本地 |
+| QA/验收 | 核心路径、异常路径、真机体验 | `docs/`、测试记录 | 核心流程可走通，禁用能力没有入口 |
 | Codex | 项目骨架、跨端契约、自动化测试、阶段性重构 | 全仓库 | 每次改动有清晰范围、可验证、可回滚 |
 
 ## 第一阶段任务拆分
@@ -34,7 +34,7 @@ codex/export-word
 ### M0 项目骨架
 
 - Git 仓库初始化到 `main`。
-- 建立 `qihe/backend`、`qihe/ios`、`qihe/docs`。
+- 建立 `backend`、`ios`、`docs`。
 - 后端 `GET /api/health` 可运行。
 - API、模型、服务层、prompt 目录占位完成。
 - iOS 源码按 App、DesignSystem、Features、Data 分层。
@@ -98,7 +98,7 @@ codex/export-word
 
 ### 后端骨架验收
 
-- `cd qihe/backend && python -m pip install -e ".[dev]"` 可安装依赖。
+- `cd backend && python -m pip install -e ".[dev]"` 可安装依赖。
 - `python -m pytest` 通过。
 - `uvicorn app.main:app --reload` 可启动。
 - `GET /api/health` 返回 `{"status":"ok","service":"qihe-backend"}`。

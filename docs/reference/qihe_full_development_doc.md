@@ -150,44 +150,43 @@ Dify
 
 ## 5. 仓库结构建议
 
-当前还未开始编程。开始后建议使用一个 monorepo：
+当前仓库已经按 monorepo 结构落地：
 
 ```txt
-qihe/
-  backend/
-    app/
-      main.py
-      core/
-        config.py
-        errors.py
-      api/
-        health.py
-        chat.py
-        files.py
-        contracts.py
-      models/
-        chat.py
-        files.py
-        contracts.py
-        errors.py
-      services/
-        llm/
-          base.py
-          qwen.py
-          dify.py
-        files/
-          extractor.py
-          storage.py
-        contracts/
-          review.py
-          generate.py
-          export_word.py
-      prompts/
-        intent.md
-        chat.md
-        review.md
-        generate.md
-      tests/
+backend/
+  app/
+    main.py
+    core/
+      config.py
+      errors.py
+    api/
+      health.py
+      chat.py
+      files.py
+      contracts.py
+    models/
+      chat.py
+      files.py
+      contracts.py
+      errors.py
+    services/
+      llm/
+        base.py
+        qwen.py
+        dify.py
+      files/
+        extractor.py
+        storage.py
+      contracts/
+        review.py
+        generate.py
+        export_word.py
+    prompts/
+      intent.md
+      chat.md
+      review.md
+      generate.md
+    tests/
     pyproject.toml
     .env.example
 

@@ -17,7 +17,7 @@ Qihe/
 当前已提供 `Qihe.xcodeproj`，可以直接用 Xcode 打开：
 
 ```bash
-open qihe/ios/Qihe.xcodeproj
+open ios/Qihe.xcodeproj
 ```
 
 ## 构建入口
@@ -25,14 +25,14 @@ open qihe/ios/Qihe.xcodeproj
 当前仓库提供 `Package.swift`，用于在没有 `.xcodeproj` 时做源码级编译检查：
 
 ```bash
-cd qihe/ios
+cd ios
 swift build
 ```
 
 正式 iOS App target 构建：
 
 ```bash
-cd qihe/ios
+cd ios
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
   -project Qihe.xcodeproj \
   -scheme Qihe \
@@ -62,7 +62,7 @@ QIHE_API_BASE_URL=http://127.0.0.1:8010
 本机联调前请先启动后端：
 
 ```bash
-cd qihe/backend
+cd backend
 uvicorn app.main:app --host 127.0.0.1 --port 8010
 ```
 
