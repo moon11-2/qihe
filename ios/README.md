@@ -45,19 +45,21 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
 
 如果仓库位于 Documents、iCloud Drive 或其他同步目录，并且 `xcodebuild` 卡在项目读取阶段，可先把 iOS 工程复制到 `/tmp` 或把仓库迁到非同步目录后再构建。
 
-## 后端地址
+## API Base 环境策略
 
-默认后端地址是：
+iOS App 的 API Base 按以下优先级读取：
+
+1. Xcode Scheme 或运行环境里的 `QIHE_API_BASE_URL`
+2. `Info.plist` 里的 `QIHE_API_BASE_URL`
+3. 代码默认值 `https://api.qihe1.xyz`
+
+仓库提交的 shared Xcode Scheme 默认注入正式 HTTPS 后端：
 
 ```txt
-http://127.0.0.1:8010
+QIHE_API_BASE_URL=https://api.qihe1.xyz
 ```
 
-仓库提交了 shared Xcode Scheme，直接在 Xcode 里 Run `Qihe` 时会注入：
-
-```txt
-QIHE_API_BASE_URL=http://127.0.0.1:8010
-```
+这个值不要附带 `/api`，因为客户端请求路径已经包含 `/api/...`。
 
 本机联调前请先启动后端：
 
@@ -66,11 +68,19 @@ cd backend
 uvicorn app.main:app --host 127.0.0.1 --port 8010
 ```
 
+然后在 Xcode Scheme 的 Run > Arguments > Environment Variables 中临时覆盖：
+
+```txt
+QIHE_API_BASE_URL=http://127.0.0.1:8010
+```
+
 如果 8010 被占用，或真机联调需要访问 Mac 的局域网地址，可在 Xcode Scheme 的 Run > Arguments > Environment Variables 中覆盖 `QIHE_API_BASE_URL`，例如：
 
 ```txt
 http://192.168.1.10:8010
 ```
+
+`Info.plist` 只保留 `NSAllowsLocalNetworking`，用于本机和局域网调试。正式公网 API 必须使用 HTTPS 域名，不应为公网 IP 添加明文 HTTP ATS 例外。
 
 源码级调试和命令行运行也可以通过环境变量覆盖：
 

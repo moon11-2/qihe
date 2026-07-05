@@ -11,7 +11,7 @@ python -m pip install -e ".[dev]"
 uvicorn app.main:app --host 127.0.0.1 --port 8010 --reload
 ```
 
-默认 iOS 开发 Scheme 连接 `http://127.0.0.1:8010`。为避免本机其他 uvicorn/FastAPI 服务占用 8000，联调时请显式使用 8010。
+iOS shared Scheme 默认连接正式 HTTPS 后端。本地联调时可临时覆盖 `QIHE_API_BASE_URL=http://127.0.0.1:8010`；为避免本机其他 uvicorn/FastAPI 服务占用 8000，联调时请显式使用 8010。
 
 如果仓库位于 Documents、iCloud Drive 或其他同步目录，推荐把虚拟环境放到 `/tmp`，避免同步机制损坏 `.venv` 或 `egg-info`：
 
@@ -83,7 +83,7 @@ Authorization: Bearer <access_token>
 
 ## 服务器部署
 
-生产环境建议让 FastAPI 只监听本机 `127.0.0.1:8010`，由 nginx 对公网暴露 `http://<server>/api/...`。客户端和外部调用方不要直连 `:8010`，避免绕过反代层、日志策略和后续 TLS/限流配置。
+生产环境建议让 FastAPI 只监听本机 `127.0.0.1:8010`，由 nginx 对公网暴露 `https://api.qihe1.xyz/api/...`。客户端和外部调用方不要直连 `:8010`，避免绕过反代层、日志策略和后续 TLS/限流配置。
 
 当前服务器部署约定代码目录为 `/opt/qihe`，后端目录为 `/opt/qihe/backend`，systemd 服务名为 `qihe-backend`。如果新服务器路径不同，替换路径即可。
 
@@ -160,12 +160,23 @@ sudo systemctl status qihe-backend --no-pager
 
 ### nginx
 
-nginx 只反代 `/api/` 到本机服务端口。示例 server block：
+nginx 只反代 `/api/` 到本机服务端口。正式域名的 HTTP 入口应跳转到 HTTPS：
 
 ```nginx
 server {
     listen 80;
-    server_name 47.254.244.28;
+    server_name api.qihe1.xyz;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name api.qihe1.xyz;
+
+    ssl_certificate /etc/letsencrypt/live/api.qihe1.xyz/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/api.qihe1.xyz/privkey.pem;
+
+    client_max_body_size 25m;
 
     location /api/ {
         proxy_pass http://127.0.0.1:8010/api/;
@@ -173,7 +184,14 @@ server {
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+
+    location / {
+        return 404;
     }
 }
 ```
@@ -191,9 +209,9 @@ sudo systemctl reload nginx
 
 iOS 正式环境不能依赖公网 HTTP，也不能依赖 `https://<ip>` 加 `-k` 这类跳过证书校验的方式。IP 访问如果证书 SAN 不包含该 IP，ATS 和标准 TLS 校验都会失败。正式上线需要一个 API 域名和匹配证书。
 
-用户或运维需要先提供：
+当前正式 API 域名是 `api.qihe1.xyz`，DNS A 记录指向服务器公网 IP。新环境上线时，用户或运维需要先提供：
 
-- API 域名，例如 `api.example.com`。
+- API 域名，例如 `api.qihe1.xyz`。
 - DNS 管理权限，将该域名的 A 记录指向服务器公网 IP。
 - 服务器 SSH/sudo 权限。
 - 云安全组或防火墙权限：公网开放 80/443，不开放 8010。
@@ -202,8 +220,8 @@ iOS 正式环境不能依赖公网 HTTP，也不能依赖 `https://<ip>` 加 `-k
 DNS 验证：
 
 ```bash
-dig +short A api.example.com
-dig +short A api.example.com @1.1.1.1
+dig +short A api.qihe1.xyz
+dig +short A api.qihe1.xyz @1.1.1.1
 ```
 
 nginx HTTP 预配置：
@@ -211,7 +229,7 @@ nginx HTTP 预配置：
 ```nginx
 server {
     listen 80;
-    server_name api.example.com;
+    server_name api.qihe1.xyz;
 
     client_max_body_size 25m;
 
@@ -236,7 +254,7 @@ server {
 签发证书：
 
 ```bash
-sudo certbot --nginx -d api.example.com
+sudo certbot --nginx -d api.qihe1.xyz
 sudo certbot renew --dry-run
 ```
 
@@ -245,16 +263,16 @@ sudo certbot renew --dry-run
 ```nginx
 server {
     listen 80;
-    server_name api.example.com;
+    server_name api.qihe1.xyz;
     return 301 https://$host$request_uri;
 }
 
 server {
     listen 443 ssl http2;
-    server_name api.example.com;
+    server_name api.qihe1.xyz;
 
-    ssl_certificate /etc/letsencrypt/live/api.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/api.example.com/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/api.qihe1.xyz/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/api.qihe1.xyz/privkey.pem;
 
     client_max_body_size 25m;
 
@@ -281,15 +299,15 @@ server {
 ```bash
 sudo nginx -t
 sudo systemctl reload nginx
-curl -I http://api.example.com/api/health
-curl -fsS https://api.example.com/api/health
-openssl s_client -connect api.example.com:443 -servername api.example.com </dev/null 2>/dev/null \
+curl -I http://api.qihe1.xyz/api/health
+curl -fsS https://api.qihe1.xyz/api/health
+openssl s_client -connect api.qihe1.xyz:443 -servername api.qihe1.xyz </dev/null 2>/dev/null \
   | openssl x509 -noout -subject -issuer -dates -ext subjectAltName
 ```
 
 原生 iOS App 调 API 不需要 CORS。若后续有 Web 前端跨域访问，再增加显式 origin allowlist，不要在生产用 `*` 搭配 `Authorization`。
 
-Release iOS 的 API base URL 应设置为 `https://api.example.com`，不要附带 `/api`，因为客户端请求路径已经包含 `/api/...`。
+Release iOS 的 API base URL 应设置为 `https://api.qihe1.xyz`，不要附带 `/api`，因为客户端请求路径已经包含 `/api/...`。
 
 ### 更新代码与重启
 
@@ -307,7 +325,7 @@ sudo systemctl restart qihe-backend
 
 ```bash
 curl -fsS http://127.0.0.1:8010/api/health
-curl -fsS http://47.254.244.28/api/health
+curl -fsS https://api.qihe1.xyz/api/health
 ```
 
 期望响应：
@@ -330,5 +348,5 @@ sudo tail -n 100 /var/log/nginx/error.log
 - `systemctl status qihe-backend` 确认服务是否运行。
 - `curl http://127.0.0.1:8010/api/health` 确认 FastAPI 本机可用。
 - `nginx -t` 确认 nginx 配置语法正确。
-- `curl http://47.254.244.28/api/health` 确认公网只通过 nginx 访问 API。
+- `curl https://api.qihe1.xyz/api/health` 确认公网 HTTPS API 可用。
 - 云安全组、防火墙不要放行公网 `8010`。

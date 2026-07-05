@@ -51,6 +51,8 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
 
 真实模型密钥、cookie、API key 只放本地环境文件，不要提交到仓库。
 
+iOS App 默认连接正式后端 `https://api.qihe1.xyz`。本地联调时可在 Xcode Scheme 或运行环境里把 `QIHE_API_BASE_URL` 临时覆盖为 `http://127.0.0.1:8010`。更多 iOS 运行配置见 [ios/README.md](ios/README.md)。
+
 ## 协作入口
 
 - 开发分工、原则、验收：[docs/development_framework.md](docs/development_framework.md)
