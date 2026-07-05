@@ -310,6 +310,9 @@ private struct APIErrorResponse: Decodable {
 
     var displayString: String {
         if let error {
+            if error.code == "auth_required" {
+                return "请登录后使用"
+            }
             return error.message
         }
         return detail?.displayString ?? "请求失败"
@@ -331,6 +334,9 @@ enum APIClientError: LocalizedError {
         case .unsupportedFileType:
             return "仅支持 PDF、Word/DOCX 和 TXT 文件。"
         case let .server(statusCode, detail):
+            if statusCode == 401 {
+                return detail
+            }
             return "服务器返回异常（\(statusCode)）：\(detail)"
         case .invalidResponse:
             return "服务器返回异常"

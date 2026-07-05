@@ -123,7 +123,7 @@ struct ChatView: View {
     private var composer: some View {
         VStack(spacing: 10) {
             if !authStore.status.isSignedIn {
-                ErrorBanner(message: "请先登录后使用对话。", retryTitle: "去登录") {
+                ErrorBanner(message: "请登录后使用", retryTitle: "去登录") {
                     openSignIn()
                 }
             } else if let errorMessage {

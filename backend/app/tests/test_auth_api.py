@@ -144,6 +144,7 @@ def test_core_contract_api_requires_login(client: TestClient) -> None:
 
     assert anonymous_response.status_code == 401
     assert anonymous_response.json()["error"]["code"] == "auth_required"
+    assert anonymous_response.json()["error"]["message"] == "请登录后使用"
 
     base = _auth_base(client)
     credentials = _new_credentials()

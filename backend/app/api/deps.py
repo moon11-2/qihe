@@ -15,7 +15,7 @@ def require_current_user(authorization: str | None = Header(default=None)) -> Au
 
 def _bearer_token(authorization: str | None) -> str:
     if not authorization:
-        raise api_error(401, "auth_required", "请先登录")
+        raise api_error(401, "auth_required", "请登录后使用")
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() != "bearer" or not token.strip():
         raise api_error(401, "invalid_token", "登录状态无效，请重新登录")

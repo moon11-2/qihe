@@ -75,7 +75,7 @@ final class AuthStore: ObservableObject {
 
     func requestSignIn() {
         mode = .login
-        message = "请先登录后使用合同能力。"
+        message = "请登录后使用"
     }
 }
 

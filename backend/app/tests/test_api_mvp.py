@@ -145,6 +145,7 @@ def test_core_endpoints_require_login(tmp_path: Path, monkeypatch) -> None:
     )
     assert chat_response.status_code == 401
     assert chat_response.json()["error"]["code"] == "auth_required"
+    assert chat_response.json()["error"]["message"] == "请登录后使用"
 
     upload_response = client.post(
         "/api/files/upload",
@@ -152,6 +153,7 @@ def test_core_endpoints_require_login(tmp_path: Path, monkeypatch) -> None:
     )
     assert upload_response.status_code == 401
     assert upload_response.json()["error"]["code"] == "auth_required"
+    assert upload_response.json()["error"]["message"] == "请登录后使用"
 
     run_response = client.post(
         "/api/contracts/run",
@@ -159,6 +161,7 @@ def test_core_endpoints_require_login(tmp_path: Path, monkeypatch) -> None:
     )
     assert run_response.status_code == 401
     assert run_response.json()["error"]["code"] == "auth_required"
+    assert run_response.json()["error"]["message"] == "请登录后使用"
 
     export_response = client.post(
         "/api/contracts/export/word",
@@ -170,6 +173,7 @@ def test_core_endpoints_require_login(tmp_path: Path, monkeypatch) -> None:
     )
     assert export_response.status_code == 401
     assert export_response.json()["error"]["code"] == "auth_required"
+    assert export_response.json()["error"]["message"] == "请登录后使用"
 
 
 def test_chat_response_shapes(tmp_path: Path, monkeypatch) -> None:
