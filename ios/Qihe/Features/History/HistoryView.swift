@@ -72,15 +72,20 @@ struct HistoryView: View {
 
             Spacer()
 
-            Button("清空") {
+            Button {
                 isClearConfirmationPresented = true
+            } label: {
+                Text("清空")
+                    .font(QiheFont.body(size: 15, weight: .semibold))
+                    .foregroundStyle(historyStore.records.isEmpty ? QiheColor.muted : QiheColor.seal)
+                    .lineLimit(1)
+                    .padding(.horizontal, 16)
+                    .frame(height: 38)
+                    .background(QiheColor.card.opacity(historyStore.records.isEmpty ? 0.55 : 1))
+                    .clipShape(Capsule())
+                    .contentShape(Capsule())
             }
-            .font(QiheFont.body(size: 15, weight: .semibold))
-            .foregroundStyle(historyStore.records.isEmpty ? QiheColor.muted : QiheColor.seal)
-            .padding(.horizontal, 16)
-            .frame(height: 38)
-            .background(QiheColor.card.opacity(historyStore.records.isEmpty ? 0.55 : 1))
-            .clipShape(Capsule())
+            .buttonStyle(.plain)
             .shadow(color: .black.opacity(historyStore.records.isEmpty ? 0 : 0.04), radius: 12, x: 0, y: 6)
             .disabled(historyStore.records.isEmpty)
         }

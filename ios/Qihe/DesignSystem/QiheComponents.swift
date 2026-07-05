@@ -397,14 +397,21 @@ struct AttachmentRow: View {
 
                 Spacer()
 
-                Button(actionTitle, action: action)
-                    .font(QiheFont.caption(size: 12, weight: .semibold))
-                    .foregroundStyle(isDisabled ? QiheColor.muted : QiheColor.navy)
-                    .padding(.horizontal, 10)
-                    .frame(height: 30)
-                    .background(isDisabled ? QiheColor.line : QiheColor.navySoft)
-                    .clipShape(RoundedRectangle(cornerRadius: QiheRadius.xs, style: .continuous))
-                    .disabled(isDisabled)
+                Button(action: action) {
+                    Text(actionTitle)
+                        .font(QiheFont.caption(size: 12, weight: .semibold))
+                        .foregroundStyle(isDisabled ? QiheColor.muted : QiheColor.navy)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.86)
+                        .padding(.horizontal, 10)
+                        .frame(minWidth: 46)
+                        .frame(height: 30)
+                        .background(isDisabled ? QiheColor.line : QiheColor.navySoft)
+                        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.xs, style: .continuous))
+                        .contentShape(RoundedRectangle(cornerRadius: QiheRadius.xs, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(isDisabled)
             }
         }
     }

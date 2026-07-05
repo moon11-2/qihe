@@ -18,6 +18,7 @@ struct ReviewInputView: View {
     @State private var activeReviewToken: UUID?
     @State private var errorMessage: String?
     @State private var lastImportedURL: URL?
+    private let linedTextLineHeight: CGFloat = 28
 
     init(prefill: String?, initialAttachment: UploadedFile? = nil) {
         _text = State(initialValue: prefill ?? "")
@@ -133,6 +134,7 @@ struct ReviewInputView: View {
             ZStack(alignment: .topLeading) {
                 TextEditor(text: $text)
                     .font(QiheFont.body(size: 14))
+                    .lineSpacing(10)
                     .foregroundStyle(QiheColor.inkSoft)
                     .frame(minHeight: 158)
                     .scrollContentBackground(.hidden)
@@ -147,7 +149,7 @@ struct ReviewInputView: View {
                 }
             }
             .background(
-                LinedPaperBackground()
+                LinedPaperBackground(lineHeight: linedTextLineHeight)
                     .opacity(0.72)
             )
         }
@@ -306,17 +308,21 @@ struct ReviewInputView: View {
 
     @ViewBuilder
     private var reviewActionArea: some View {
-        if isRunning {
-            QiheSecondaryButton(title: "取消", systemImage: "xmark.circle") {
-                cancelReview()
-            }
-        } else {
+        VStack(spacing: 10) {
             QihePrimaryButton(
                 title: "开始审查",
                 systemImage: "doc.text.magnifyingglass",
+                isLoading: isRunning,
                 isDisabled: !hasInput || isUploading
             ) {
                 startReview()
+            }
+
+            if isRunning {
+                QiheSecondaryButton(title: "取消", systemImage: "xmark.circle") {
+                    cancelReview()
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
     }
@@ -627,10 +633,11 @@ private struct ReviewMetadataDraft {
 }
 
 private struct LinedPaperBackground: View {
+    var lineHeight: CGFloat = 28
+
     var body: some View {
         GeometryReader { proxy in
             Path { path in
-                let lineHeight: CGFloat = 28
                 var y = lineHeight
                 while y < proxy.size.height {
                     path.move(to: CGPoint(x: 0, y: y))
