@@ -14,8 +14,11 @@ class Settings(BaseSettings):
 
     max_upload_mb: int = 20
 
+    auth_db_path: str = "/tmp/qihe-auth.sqlite3"
+    jwt_secret: str = ""
+    jwt_expires_minutes: int = 60 * 24 * 7
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 
 settings = Settings()
-

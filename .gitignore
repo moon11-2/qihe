@@ -23,6 +23,7 @@ __pycache__/
 venv/
 build/
 *.egg-info/
+backend/uv.lock
 
 # FastAPI / local runtime
 uploads/
