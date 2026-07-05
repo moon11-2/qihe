@@ -70,21 +70,23 @@ struct HomeView: View {
     }
 
     private var hero: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 8) {
             SealMark(size: 64)
                 .rotationEffect(.degrees(-3))
 
-            Text("契合")
-                .font(QiheFont.title(size: 30))
-                .foregroundStyle(QiheColor.ink)
+            VStack(spacing: 4) {
+                Text("契合")
+                    .font(QiheFont.title(size: 24))
+                    .foregroundStyle(QiheColor.ink)
 
-            Text("AI 合同审查与生成助手")
-                .font(QiheFont.caption(size: 12.5, weight: .medium))
-                .foregroundStyle(QiheColor.muted)
+                Text("AI 合同审查与生成助手")
+                    .font(QiheFont.caption(size: 11, weight: .medium))
+                    .foregroundStyle(QiheColor.muted.opacity(0.7))
+            }
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 12)
-        .padding(.bottom, 4)
+        .padding(.top, 8)
+        .padding(.bottom, 0)
     }
 
     private var chatEntry: some View {
@@ -94,7 +96,7 @@ struct HomeView: View {
                     .font(QiheFont.body(size: 14))
                     .foregroundStyle(QiheColor.ink)
                     .lineLimit(2...5)
-                    .frame(minHeight: 48, alignment: .topLeading)
+                    .frame(minHeight: 44, alignment: .topLeading)
 
                 HStack {
                     Text("合同助手")
@@ -146,7 +148,7 @@ struct HomeView: View {
                         .foregroundStyle(QiheColor.navy)
                         .frame(width: 34, height: 34)
                         .background(QiheColor.navySoft)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text(uploadedFile.filename)
@@ -169,7 +171,7 @@ struct HomeView: View {
                     .padding(.horizontal, 12)
                     .frame(height: 30)
                     .background(QiheColor.navy)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: QiheRadius.xs, style: .continuous))
                 }
             }
         }
@@ -341,7 +343,7 @@ private struct HomeQuickEntry: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(14)
             .background(QiheColor.card)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous))
             .overlay(alignment: .top) {
                 Rectangle()
                     .fill(accent)
@@ -349,7 +351,7 @@ private struct HomeQuickEntry: View {
                     .clipShape(RoundedRectangle(cornerRadius: 2, style: .continuous))
             }
             .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous)
                     .stroke(QiheColor.line, lineWidth: 1)
             )
         }
@@ -388,7 +390,7 @@ private struct HomeRecentRecordRow: View {
                     .padding(.horizontal, 7)
                     .frame(height: 24)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        RoundedRectangle(cornerRadius: QiheRadius.xs, style: .continuous)
                             .stroke(stampColor, lineWidth: 1)
                     )
             }

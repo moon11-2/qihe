@@ -157,6 +157,38 @@ def test_chat_response_shapes(monkeypatch) -> None:
     assert consult_response.status_code == 200
     assert consult_response.json()["type"] == "chat"
 
+    follow_up_prompt = (
+        "审查结果：押金退还条件不清。\n"
+        "风险标题：押金退还条件不清\n"
+        "涉及条款：押金一个月，退租后退还。\n"
+        "修订建议：补充退还期限。\n"
+        "原文摘录：押金一个月，退租后退还。\n"
+        "请告诉我这个条款怎么改，怎么和对方谈？"
+    )
+    follow_up_response = client.post(
+        "/api/chat",
+        json={"messages": [{"role": "user", "content": follow_up_prompt}]},
+    )
+    assert follow_up_response.status_code == 200
+    assert follow_up_response.json()["type"] == "chat"
+    assert follow_up_response.json()["route"] is None
+
+    rerun_review_response = client.post(
+        "/api/chat",
+        json={"messages": [{"role": "user", "content": "请重新审查下面这份合同"}]},
+    )
+    assert rerun_review_response.status_code == 200
+    assert rerun_review_response.json()["type"] == "route"
+    assert rerun_review_response.json()["route"] == "review"
+
+    generate_full_contract_response = client.post(
+        "/api/chat",
+        json={"messages": [{"role": "user", "content": "根据这些条款生成一份完整合同"}]},
+    )
+    assert generate_full_contract_response.status_code == 200
+    assert generate_full_contract_response.json()["type"] == "route"
+    assert generate_full_contract_response.json()["route"] == "generate"
+
     need_input_response = client.post(
         "/api/chat",
         json={"messages": [{"role": "user", "content": "合同"}]},
@@ -227,7 +259,8 @@ def test_contract_run_review_and_generate_shapes() -> None:
     assert "10000元" in text_only_generate_json["generate_result"]["draft"]
 
 
-def test_contract_generate_uses_metadata_without_treating_empty_values_as_facts() -> None:
+def test_contract_generate_uses_metadata_without_treating_empty_values_as_facts(monkeypatch) -> None:
+    monkeypatch.setattr("app.services.contracts.generate.create_qwen_provider", lambda: FailingProvider())
     client = TestClient(create_app())
     response = client.post(
         "/api/contracts/run",

@@ -102,21 +102,21 @@ struct GenerateResultView: View {
                     .frame(maxWidth: .infinity)
 
                 Text(draft.nilIfBlank ?? "暂无合同草案。")
-                    .font(QiheFont.body(size: 13))
+                    .font(QiheFont.document(size: 13))
                     .foregroundStyle(QiheColor.inkSoft)
-                    .lineSpacing(6)
+                    .lineSpacing(7)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(18)
             .background(QiheColor.card)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous)
                     .stroke(QiheColor.lineStrong, lineWidth: 1)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                RoundedRectangle(cornerRadius: QiheRadius.xs, style: .continuous)
                     .stroke(QiheColor.line, lineWidth: 1)
                     .padding(6)
             )
@@ -127,7 +127,7 @@ struct GenerateResultView: View {
                     .foregroundStyle(QiheColor.seal.opacity(0.58))
                     .frame(width: 54, height: 54)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous)
                             .stroke(QiheColor.seal.opacity(0.48), lineWidth: 2.5)
                     )
                     .rotationEffect(.degrees(-7))
@@ -161,9 +161,9 @@ struct GenerateResultView: View {
                                 .padding(.horizontal, 10)
                                 .frame(height: 38)
                                 .background(QiheColor.paper)
-                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                .clipShape(RoundedRectangle(cornerRadius: QiheRadius.xs, style: .continuous))
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    RoundedRectangle(cornerRadius: QiheRadius.xs, style: .continuous)
                                         .stroke(QiheColor.line, lineWidth: 1)
                                 )
                         }

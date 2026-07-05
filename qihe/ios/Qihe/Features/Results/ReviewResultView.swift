@@ -79,6 +79,11 @@ struct ReviewResultView: View {
                 .accessibilityLabel("导出 Word")
             }
         }
+        .safeAreaInset(edge: .bottom) {
+            if let payload = historyStore.record(id: recordId)?.reviewPayload {
+                reviewActionBar(payload)
+            }
+        }
         .sheet(item: $shareDocument) { document in
             ShareSheet(document: document)
         }
@@ -215,9 +220,9 @@ struct ReviewResultView: View {
             ReviewStatCell(value: gradeLetter(for: result.riskLevel), label: "风险等级", color: (result.riskLevel ?? .pending).foreground)
         }
         .background(QiheColor.card)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous)
                 .stroke(QiheColor.lineStrong, lineWidth: 1)
         )
     }
@@ -232,6 +237,99 @@ struct ReviewResultView: View {
                 appState.path.append(.subject(recordId: recordId))
             }
         }
+    }
+
+    private func reviewActionBar(_ payload: ReviewHistoryPayload) -> some View {
+        HStack(spacing: 10) {
+            QiheSecondaryButton(title: "继续修改", systemImage: "square.and.pencil") {
+                appState.path.append(.review(prefill: reviewPrefillText(from: payload)))
+            }
+
+            QihePrimaryButton(title: "追问 AI", systemImage: "bubble.left.and.text.bubble.right") {
+                appState.path.append(.chat(localRecordId: nil, initialMessage: followUpPrompt(for: payload)))
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 10)
+        .padding(.bottom, 12)
+        .background(QiheColor.paper)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(QiheColor.line)
+                .frame(height: 1)
+        }
+    }
+
+    private func reviewPrefillText(from payload: ReviewHistoryPayload) -> String? {
+        payload.result.source?.originalText?.nilIfBlank
+            ?? payload.result.source?.textPreview?.nilIfBlank
+            ?? payload.result.summary?.nilIfBlank
+    }
+
+    private func followUpPrompt(for payload: ReviewHistoryPayload) -> String {
+        let result = payload.result
+        let summary = result.summary?.nilIfBlank ?? "暂无审查摘要。"
+        let selectedRisk = selectedFollowUpRisk(in: result)
+        let excerpt = followUpExcerpt(for: result, risk: selectedRisk)
+
+        guard let risk = selectedRisk else {
+            return [
+                "请基于这份合同审查结果，继续帮我判断下一步怎么改。",
+                "审查摘要：\(summary)",
+                "原文摘录：\(excerpt)"
+            ].joined(separator: "\n")
+        }
+
+        var lines = [
+            "请基于这份合同审查结果，继续帮我判断下一步怎么改。",
+            "审查摘要：\(summary)",
+            "综合风险等级：\((result.riskLevel ?? risk.riskLevel).label)",
+            "风险标题：\(risk.displayTitle)"
+        ]
+
+        if let clause = followUpClause(for: risk) {
+            lines.append("涉及条款：\(clause)")
+        }
+        if let analysis = risk.displayAnalysis?.nilIfBlank {
+            lines.append("风险分析：\(analysis.truncated(to: 160))")
+        }
+        if let suggestion = risk.displaySuggestion?.nilIfBlank {
+            lines.append("修订建议：\(suggestion.truncated(to: 160))")
+        }
+        lines.append("原文摘录：\(excerpt)")
+        return lines.joined(separator: "\n")
+    }
+
+    private func selectedFollowUpRisk(in result: ReviewResult) -> RiskItem? {
+        if let highlightedRiskID,
+           let highlightedRisk = result.risks.first(where: { $0.id == highlightedRiskID }) {
+            return highlightedRisk
+        }
+
+        return result.risks.sortedForSourceDisplay.first
+    }
+
+    private func followUpClause(for risk: RiskItem) -> String? {
+        risk.clause?.nilIfBlank
+            ?? risk.clauseTitle?.nilIfBlank
+            ?? risk.clauseId?.nilIfBlank
+    }
+
+    private func followUpExcerpt(for result: ReviewResult, risk: RiskItem?) -> String {
+        let excerpt = risk?.originalExcerpt?.nilIfBlank
+            ?? risk?.originalText?.nilIfBlank
+            ?? result.source?.originalText?.nilIfBlank
+            ?? result.source?.textPreview?.nilIfBlank
+            ?? "暂无原文摘录。"
+        return cappedText(excerpt, limit: 300)
+    }
+
+    private func cappedText(_ text: String, limit: Int) -> String {
+        let cleaned = text.trimmedForInput
+        guard cleaned.count > limit else {
+            return cleaned
+        }
+        return String(cleaned.prefix(limit))
     }
 
     private func exportWord(_ payload: ReviewHistoryPayload) async {
@@ -307,7 +405,7 @@ private struct ReviewRiskGradeStamp: View {
         .foregroundStyle(level.foreground)
         .frame(width: 58, height: 58)
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous)
                 .stroke(level.foreground, lineWidth: 2.5)
         )
         .background(QiheColor.card.opacity(0.6))
@@ -441,9 +539,9 @@ private struct UnlocatedRiskNotice: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(QiheColor.amberSoft.opacity(0.76))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous)
                 .stroke(QiheColor.amber.opacity(0.28), lineWidth: 1)
         )
     }
@@ -507,9 +605,9 @@ private struct SourceParagraphBlock: View {
         .padding(.vertical, paragraph.primaryRisk == nil ? 8 : 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(paragraph.primaryRisk == nil ? Color.clear : QiheColor.navySoft.opacity(0.74))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous)
                 .stroke(paragraph.primaryRisk == nil ? Color.clear : QiheColor.navy.opacity(0.18), lineWidth: 1)
         )
     }
@@ -1068,7 +1166,7 @@ private struct RiskReportCard: View {
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            RoundedRectangle(cornerRadius: QiheRadius.xs, style: .continuous)
                                 .stroke(QiheColor.seal, lineWidth: 1)
                         )
 
@@ -1092,13 +1190,13 @@ private struct RiskReportCard: View {
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(QiheColor.navySoft)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
             }
         }
         .padding(14)
         .padding(.leading, 2)
         .background(isHighlighted ? QiheColor.navySoft.opacity(0.72) : QiheColor.card)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous))
         .overlay(alignment: .leading) {
             Rectangle()
                 .fill(isHighlighted ? QiheColor.navy : risk.riskLevel.foreground)
@@ -1111,14 +1209,14 @@ private struct RiskReportCard: View {
                 .padding(.horizontal, 6)
                 .frame(height: 25)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    RoundedRectangle(cornerRadius: QiheRadius.xs, style: .continuous)
                         .stroke(risk.riskLevel.foreground, lineWidth: 1.5)
                 )
                 .rotationEffect(.degrees(4))
                 .padding(12)
         }
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous)
                 .stroke(isHighlighted ? QiheColor.navy.opacity(0.52) : QiheColor.line, lineWidth: isHighlighted ? 2 : 1)
         )
         .animation(.easeInOut(duration: 0.2), value: isHighlighted)
@@ -1151,9 +1249,9 @@ struct SubjectFactsPanel: View {
                         .padding(.horizontal, 11)
                         .frame(height: 30)
                         .background(QiheColor.card)
-                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.xs, style: .continuous))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            RoundedRectangle(cornerRadius: QiheRadius.xs, style: .continuous)
                                 .stroke(QiheColor.line, lineWidth: 1)
                         )
                     }
@@ -1185,9 +1283,9 @@ private struct PartialSubjectNotice: View {
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(QiheColor.card.opacity(0.72))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous)
                 .stroke(QiheColor.amber.opacity(0.32), lineWidth: 1)
         )
     }
@@ -1200,15 +1298,7 @@ private struct PartialSubjectNotice: View {
 struct EmptySubjectBox: View {
     var body: some View {
         VStack(spacing: 10) {
-            Text("空")
-                .font(QiheFont.title(size: 20))
-                .foregroundStyle(QiheColor.lineStrong)
-                .frame(width: 46, height: 46)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(QiheColor.lineStrong, style: StrokeStyle(lineWidth: 2, dash: [5, 4]))
-                )
-                .rotationEffect(.degrees(-5))
+            BlankSealMark(size: 46)
 
             Text("未识别到乙方、金额或期限等信息，请确认合同文本是否完整。")
                 .font(QiheFont.body(size: 12.5))
@@ -1220,9 +1310,9 @@ struct EmptySubjectBox: View {
         .padding(.vertical, 26)
         .padding(.horizontal, 18)
         .background(QiheColor.card.opacity(0.6))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous)
                 .strokeBorder(QiheColor.lineStrong, style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
         )
     }

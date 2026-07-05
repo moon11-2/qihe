@@ -13,6 +13,10 @@ enum QiheFont {
         .system(size: size, weight: weight)
     }
 
+    static func document(size: CGFloat) -> Font {
+        .custom("Songti SC", fixedSize: size).weight(.regular)
+    }
+
     static func caption(size: CGFloat = 12, weight: Font.Weight = .medium) -> Font {
         .system(size: size, weight: weight)
     }

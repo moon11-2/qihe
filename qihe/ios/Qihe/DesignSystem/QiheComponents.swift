@@ -20,6 +20,22 @@ struct SealMark: View {
     }
 }
 
+struct BlankSealMark: View {
+    var size: CGFloat = 46
+
+    var body: some View {
+        Text("空")
+            .font(QiheFont.title(size: size * 0.43))
+            .foregroundStyle(QiheColor.lineStrong)
+            .frame(width: size, height: size)
+            .overlay(
+                RoundedRectangle(cornerRadius: size * 0.26, style: .continuous)
+                    .strokeBorder(QiheColor.lineStrong, style: StrokeStyle(lineWidth: max(1.5, size * 0.044), dash: [5, 4]))
+            )
+            .rotationEffect(.degrees(-5))
+    }
+}
+
 struct QihePrimaryButton: View {
     let title: String
     var systemImage: String?
@@ -46,7 +62,7 @@ struct QihePrimaryButton: View {
             .frame(height: 48)
             .foregroundStyle(.white)
             .background(isDisabled ? QiheColor.muted : QiheColor.navy)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(isDisabled || isLoading)
@@ -75,7 +91,7 @@ struct QiheSecondaryButton: View {
             .frame(height: 44)
             .foregroundStyle(isDisabled ? QiheColor.muted : QiheColor.navy)
             .background(isDisabled ? QiheColor.line : QiheColor.navySoft)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(isDisabled)
@@ -90,9 +106,9 @@ struct PaperCard<Content: View>: View {
         content
             .padding(padding)
             .background(QiheColor.card)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous)
                     .stroke(QiheColor.line, lineWidth: 1)
             )
     }
@@ -204,7 +220,7 @@ struct HomeEntryCard: View {
                         .foregroundStyle(QiheColor.navy)
                         .frame(width: 44, height: 44)
                         .background(QiheColor.navySoft)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
 
                     VStack(alignment: .leading, spacing: 5) {
                         Text(title)
@@ -245,7 +261,7 @@ struct AttachmentRow: View {
                     .foregroundStyle(QiheColor.navy)
                     .frame(width: 36, height: 36)
                     .background(QiheColor.navySoft)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
@@ -269,7 +285,7 @@ struct AttachmentRow: View {
                     .padding(.horizontal, 10)
                     .frame(height: 30)
                     .background(isDisabled ? QiheColor.line : QiheColor.navySoft)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: QiheRadius.xs, style: .continuous))
                     .disabled(isDisabled)
             }
         }
@@ -286,7 +302,7 @@ struct ProcessNode: View {
         HStack(alignment: .top, spacing: 12) {
             ZStack {
                 Circle()
-                    .fill(isDone ? QiheColor.pine : (isActive ? QiheColor.seal : QiheColor.lineStrong))
+                    .fill(isDone ? QiheColor.pine : (isActive ? QiheColor.navy : QiheColor.lineStrong))
                     .frame(width: 22, height: 22)
 
                 Image(systemName: isDone ? "checkmark" : "circle.fill")
@@ -350,9 +366,9 @@ struct ResultStatStrip: View {
             }
         }
         .background(QiheColor.card)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous)
                 .stroke(QiheColor.lineStrong, lineWidth: 1)
         )
     }
@@ -375,9 +391,9 @@ struct RiskGradeStamp: View {
         .foregroundStyle(level.foreground)
         .frame(width: 60, height: 60)
         .background(QiheColor.card.opacity(0.72))
-        .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 15, style: .continuous)
+            RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous)
                 .stroke(level.foreground, lineWidth: 2)
         )
         .rotationEffect(.degrees(7))
@@ -432,9 +448,9 @@ struct RiskCard: View {
                     .padding(11)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(QiheColor.sealSoft.opacity(0.46))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous)
                             .stroke(QiheColor.seal.opacity(0.24), lineWidth: 1)
                     )
                 }
@@ -464,15 +480,7 @@ struct RiskCard: View {
 struct SubjectEmptyNotice: View {
     var body: some View {
         VStack(spacing: 10) {
-            Text("空")
-                .font(QiheFont.title(size: 20))
-                .foregroundStyle(QiheColor.lineStrong)
-                .frame(width: 46, height: 46)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(QiheColor.lineStrong, style: StrokeStyle(lineWidth: 2, dash: [5, 4]))
-                )
-                .rotationEffect(.degrees(-5))
+            BlankSealMark(size: 46)
 
             Text("未识别到乙方、金额或期限等信息，请确认合同文本是否完整。")
                 .font(QiheFont.body(size: 13))
@@ -484,9 +492,9 @@ struct SubjectEmptyNotice: View {
         .padding(.vertical, 26)
         .padding(.horizontal, 18)
         .background(QiheColor.card.opacity(0.58))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous)
                 .stroke(QiheColor.lineStrong, style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
         )
     }
@@ -517,9 +525,9 @@ struct SubjectFactGrid: View {
                 .padding(.vertical, 9)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(QiheColor.card)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: QiheRadius.xs, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: QiheRadius.xs, style: .continuous)
                         .stroke(QiheColor.line, lineWidth: 1)
                 )
             }
@@ -551,22 +559,22 @@ struct ContractDraftSheet: View {
             }
 
             Text(draft.nilIfBlank ?? "暂无合同草案。")
-                .font(QiheFont.body(size: 14))
+                .font(QiheFont.document(size: 13))
                 .foregroundStyle(QiheColor.inkSoft)
-                .lineSpacing(5)
+                .lineSpacing(7)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 18)
         .padding(.top, 22)
         .padding(.bottom, 46)
         .background(QiheColor.card)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous)
                 .stroke(QiheColor.lineStrong, lineWidth: 1)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
+            RoundedRectangle(cornerRadius: QiheRadius.xs, style: .continuous)
                 .stroke(QiheColor.line, lineWidth: 1)
                 .padding(6)
         )
@@ -578,7 +586,7 @@ struct ContractDraftSheet: View {
                 .lineSpacing(2)
                 .frame(width: 54, height: 54)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous)
                         .stroke(QiheColor.seal.opacity(0.5), lineWidth: 2)
                 )
                 .rotationEffect(.degrees(-7))
@@ -604,9 +612,9 @@ struct QiheFormInput: View {
                 .padding(.horizontal, 11)
                 .padding(.vertical, 10)
                 .background(QiheColor.paper)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: QiheRadius.xs, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: QiheRadius.xs, style: .continuous)
                         .stroke(QiheColor.line, lineWidth: 1)
                 )
         }
@@ -638,8 +646,7 @@ struct EmptyStateView: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            SealMark(size: 42)
-                .opacity(0.82)
+            BlankSealMark(size: 42)
 
             Text(title)
                 .font(QiheFont.body(size: 16, weight: .semibold))
