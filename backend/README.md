@@ -120,12 +120,12 @@ DIFY_API_BASE_URL=https://api.dify.ai/v1
 
 MAX_UPLOAD_MB=20
 
-AUTH_DB_PATH=/var/lib/qihe/auth.sqlite3
+QIHE_DB_PATH=/var/lib/qihe/qihe.db
 JWT_SECRET=replace-with-random-secret
 JWT_EXPIRES_MINUTES=10080
 ```
 
-`JWT_SECRET` 必须在生产环境配置为随机长字符串。`AUTH_DB_PATH` 指向 SQLite 文件；确保 systemd 运行用户对目录有读写权限。
+`JWT_SECRET` 必须在生产环境配置为随机长字符串。`QIHE_DB_PATH` 指向统一 SQLite 数据库文件；确保 systemd 运行用户对目录有读写权限。`AUTH_DB_PATH` 仅用于旧部署兼容，新部署不要再配置 auth 专用库。
 
 ### 安装依赖
 

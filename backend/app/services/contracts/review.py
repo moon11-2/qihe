@@ -88,8 +88,13 @@ FALLBACK_RULES = [
 ]
 
 
-async def run_review(request: ContractRunRequest, provider: LLMProvider | None = None) -> ReviewResult:
-    text, source = resolve_contract_input(request)
+async def run_review(
+    request: ContractRunRequest,
+    provider: LLMProvider | None = None,
+    *,
+    owner_user_id: int | None = None,
+) -> ReviewResult:
+    text, source = resolve_contract_input(request, owner_user_id=owner_user_id)
     if not text:
         return build_review_fallback(source, "未收到可审查的合同文本，请粘贴合同正文或上传可读取文件。")
 

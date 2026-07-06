@@ -34,8 +34,13 @@ GENERATE_METADATA_KEYS = ("contract_type", "user_role", "my_identity", "special_
 INVALID_METADATA_VALUES = {"无", "null", "none", "None", "不确定", "未知", "未填写", "无特殊约定"}
 
 
-async def run_generate(request: ContractRunRequest, provider: LLMProvider | None = None) -> GenerateResult:
-    text, source = resolve_contract_input(request)
+async def run_generate(
+    request: ContractRunRequest,
+    provider: LLMProvider | None = None,
+    *,
+    owner_user_id: int | None = None,
+) -> GenerateResult:
+    text, source = resolve_contract_input(request, owner_user_id=owner_user_id)
     generate_metadata = pick_metadata(request.metadata, GENERATE_METADATA_KEYS)
     if not text:
         return build_generate_fallback(source, request=request, requirement_text=text)

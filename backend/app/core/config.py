@@ -1,4 +1,11 @@
+from pathlib import Path
+
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+BACKEND_DIR = Path(__file__).resolve().parents[2]
+DEFAULT_QIHE_DB_PATH = str(BACKEND_DIR / "data" / "qihe.db")
 
 
 class Settings(BaseSettings):
@@ -14,7 +21,8 @@ class Settings(BaseSettings):
 
     max_upload_mb: int = 20
 
-    auth_db_path: str = "/tmp/qihe-auth.sqlite3"
+    db_path: str = Field(default=DEFAULT_QIHE_DB_PATH, validation_alias="QIHE_DB_PATH")
+    auth_db_path: str = ""
     jwt_secret: str = ""
     jwt_expires_minutes: int = 60 * 24 * 7
 

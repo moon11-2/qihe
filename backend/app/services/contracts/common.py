@@ -4,7 +4,7 @@ from typing import Any
 
 from app.models.contracts import ContractRunRequest, ContractSource, RiskLevel
 from app.services.files.extractor import TextExtractionError, extract_text
-from app.services.files.storage import find_upload, load_metadata
+from app.services.files.storage import find_upload, is_valid_file_id, load_metadata, metadata_allows_owner
 
 PROMPT_DIR = Path(__file__).resolve().parents[2] / "prompts"
 RISK_LEVELS: set[RiskLevel] = {"高风险", "中风险", "低风险", "待确认"}
@@ -22,12 +22,20 @@ RISK_ALIASES = {
 }
 
 
+class ContractInputError(Exception):
+    def __init__(self, code: str, message: str, status_code: int = 400) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.status_code = status_code
+
+
 @lru_cache
 def load_prompt(name: str) -> str:
     return (PROMPT_DIR / f"{name}.md").read_text(encoding="utf-8")
 
 
-def resolve_contract_input(request: ContractRunRequest) -> tuple[str, ContractSource]:
+def resolve_contract_input(request: ContractRunRequest, owner_user_id: int | None = None) -> tuple[str, ContractSource]:
     text = (request.text or "").strip()
     if text:
         return text, ContractSource(
@@ -37,13 +45,19 @@ def resolve_contract_input(request: ContractRunRequest) -> tuple[str, ContractSo
         )
 
     if request.file_id:
+        if not is_valid_file_id(request.file_id):
+            raise ContractInputError("file_not_found", "文件不存在或无权访问", status_code=404)
         metadata = load_metadata(request.file_id)
-        path = find_upload(request.file_id)
-        if path:
-            try:
-                text = extract_text(path)
-            except TextExtractionError:
-                text = ""
+        if metadata is None or not metadata_allows_owner(metadata, owner_user_id):
+            raise ContractInputError("file_not_found", "文件不存在或无权访问", status_code=404)
+
+        path = find_upload(request.file_id, owner_user_id=owner_user_id)
+        if path is None:
+            raise ContractInputError("file_not_found", "文件不存在或无权访问", status_code=404)
+        try:
+            text = extract_text(path)
+        except TextExtractionError:
+            text = ""
         return text, ContractSource(
             text_preview=(text or (metadata.text_preview if metadata else ""))[:240],
             file_id=request.file_id,

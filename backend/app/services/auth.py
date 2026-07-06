@@ -5,11 +5,11 @@ import json
 import secrets
 import sqlite3
 import time
-from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
 from app.models.auth import AuthUser, LoginRequest, RegisterRequest
+from app.services.db import connect, init_schema
 
 TOKEN_ALGORITHM = "HS256"
 TOKEN_TYPE = "JWT"
@@ -114,27 +114,11 @@ def _decode_token(token: str) -> dict[str, Any]:
 
 
 def _connect() -> sqlite3.Connection:
-    db_path = Path(settings.auth_db_path)
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return connect()
 
 
 def _init_db() -> None:
-    with _connect() as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                email TEXT NOT NULL UNIQUE,
-                display_name TEXT,
-                password_hash TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            )
-            """
-        )
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
+    init_schema()
 
 
 def _get_user_row_by_email(email: str) -> sqlite3.Row | None:
