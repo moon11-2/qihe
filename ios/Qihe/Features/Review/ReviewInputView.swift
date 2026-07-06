@@ -46,7 +46,7 @@ struct ReviewInputView: View {
                     textInput
                     uploadSlot
 
-                    if shouldPreferText {
+                    if shouldUseUploadedFileAsPrimary && hasText {
                         priorityNotice
                     }
 
@@ -56,8 +56,8 @@ struct ReviewInputView: View {
                         VStack(spacing: 12) {
                             ProcessNode(
                                 title: "解析文本",
-                                detail: hasText ? "将优先按粘贴文本审查。" : "可粘贴合同全文，或上传文件。",
-                                isDone: hasText
+                                detail: attachment != nil ? "将优先按上传文件全文审查。" : "可粘贴合同全文，或上传文件。",
+                                isDone: hasText || attachment != nil
                             )
                             ProcessNode(
                                 title: "识别主体信息",
@@ -343,7 +343,7 @@ struct ReviewInputView: View {
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(QiheColor.navy)
 
-            Text("已上传文件，但本次将优先审查粘贴文本。")
+            Text("已上传文件，本次将按文件全文审查。")
                 .font(QiheFont.body(size: 13))
                 .foregroundStyle(QiheColor.navy)
                 .fixedSize(horizontal: false, vertical: true)
@@ -359,7 +359,7 @@ struct ReviewInputView: View {
             return "上传中"
         }
         if attachment != nil {
-            return shouldPreferText ? "已上传，可留作参考" : "已上传，可开始审查"
+            return "已上传，将按文件审查"
         }
         return "20MB 以内"
     }
@@ -368,16 +368,19 @@ struct ReviewInputView: View {
         !text.trimmedForInput.isEmpty
     }
 
-    private var shouldPreferText: Bool {
-        hasText && attachment != nil
+    private var shouldUseUploadedFileAsPrimary: Bool {
+        attachment != nil
     }
 
-    private var requestText: String {
-        text.trimmedForInput
+    private var requestText: String? {
+        guard !shouldUseUploadedFileAsPrimary else {
+            return nil
+        }
+        return text.trimmedForInput.nilIfBlank
     }
 
     private var requestFile: UploadedFile? {
-        hasText ? nil : attachment
+        attachment
     }
 
     private var hasReviewMetadata: Bool {
@@ -436,6 +439,7 @@ struct ReviewInputView: View {
         }
         isUploading = true
         errorMessage = nil
+        attachment = nil
         defer { isUploading = false }
 
         do {
@@ -502,14 +506,14 @@ struct ReviewInputView: View {
                 return
             }
             let source = ContractSource(
-                textPreview: result.source?.textPreview ?? currentRequestText.truncated(to: 240),
+                textPreview: result.source?.textPreview ?? currentRequestText?.truncated(to: 240),
                 fileId: result.source?.fileId ?? currentRequestFile?.fileId,
                 filename: result.source?.filename ?? currentRequestFile?.filename,
-                originalText: result.source?.originalText ?? currentRequestText.nilIfBlank
+                originalText: result.source?.originalText ?? currentRequestText
             )
             result.source = source
             let id = historyStore.saveReview(
-                requestText: currentRequestText,
+                requestText: currentRequestText ?? "",
                 attachment: currentAttachment,
                 result: result
             )
@@ -521,7 +525,12 @@ struct ReviewInputView: View {
             if isCancellation(error) || Task.isCancelled {
                 return
             }
-            errorMessage = error.qiheDisplayMessage
+            if currentRequestFile != nil, currentRequestText == nil {
+                attachment = nil
+                errorMessage = "文件状态可能已失效，请重新上传后再审查。"
+            } else {
+                errorMessage = error.qiheDisplayMessage
+            }
         }
     }
 

@@ -18,6 +18,14 @@ class FakeProvider:
         return "这是自由聊天回复。"
 
 
+class RaisingProvider:
+    async def chat_json(self, messages: list[dict[str, str]], schema_name: str) -> dict:
+        raise RuntimeError("force review fallback")
+
+    async def chat(self, messages: list[dict[str, str]]) -> str:
+        raise RuntimeError("force review fallback")
+
+
 def _client(tmp_path: Path, monkeypatch) -> TestClient:
     monkeypatch.setattr(settings, "auth_db_path", str(tmp_path / "auth.sqlite3"))
     monkeypatch.setattr(settings, "jwt_secret", "test-secret")
@@ -91,6 +99,40 @@ def test_review_rental_contract_shape(tmp_path: Path, monkeypatch) -> None:
     assert result["clause_reviews"][0]["start_offset"] is not None
     assert result["clause_reviews"][0]["end_offset"] is not None
     assert "legal_basis" in result["clause_reviews"][0]
+
+
+def test_review_fallback_still_returns_text_based_risk_items(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.services.contracts.review.create_qwen_provider",
+        lambda: RaisingProvider(),
+    )
+
+    client = _client(tmp_path, monkeypatch)
+    response = client.post(
+        "/api/contracts/run",
+        json={
+            "mode": "review",
+            "text": (
+                "合同编号：TERTON-HT-2023-391\n"
+                "福建省政府采购合同（服务类）。总金额（元）：¥169,000.00。\n"
+                "乙方应按采购文件要求完成服务，甲方验收合格后付款。\n"
+                "如乙方逾期履行或服务不符合质量标准，应承担违约责任。\n"
+                "签订合同应遵守《中华人民共和国政府采购法》及其实施条例。"
+            ),
+        },
+    )
+
+    assert response.status_code == 200
+    result = response.json()["review_result"]
+    titles = [item["risk_title"] for item in result["clause_reviews"]]
+    assert result["risk_level"] == "中风险"
+    assert result["score"] == 72
+    assert len(titles) >= 3
+    assert "付款金额与结算安排需核对" in titles
+    assert "交付验收标准需明确" in titles
+    assert "违约责任与解除条件需核对" in titles
+    assert "审查结果待确认" not in titles
+    assert result["summary"].startswith("AI 输出暂时未能稳定解析，已根据合同文本提取重点核对项。")
 
 
 def test_generate_sales_contract_shape(tmp_path: Path, monkeypatch) -> None:
