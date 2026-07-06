@@ -255,7 +255,12 @@ struct ReviewResultView: View {
                 guard requireSignIn() else {
                     return
                 }
-                appState.path.append(.review(prefill: reviewPrefillText(from: payload)))
+                appState.path.append(
+                    .review(
+                        prefill: reviewContinuationText(from: payload),
+                        attachment: payload.attachment
+                    )
+                )
             }
 
             QihePrimaryButton(title: "追问 AI", systemImage: "bubble.left.and.text.bubble.right") {
@@ -276,8 +281,13 @@ struct ReviewResultView: View {
         }
     }
 
-    private func reviewPrefillText(from payload: ReviewHistoryPayload) -> String? {
-        payload.result.source?.originalText?.nilIfBlank
+    private func reviewContinuationText(from payload: ReviewHistoryPayload) -> String? {
+        if payload.attachment != nil {
+            return payload.requestText.nilIfBlank
+        }
+
+        return payload.result.source?.originalText?.nilIfBlank
+            ?? payload.requestText.nilIfBlank
             ?? payload.result.source?.textPreview?.nilIfBlank
             ?? payload.result.summary?.nilIfBlank
     }

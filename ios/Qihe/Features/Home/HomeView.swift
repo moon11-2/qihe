@@ -237,9 +237,12 @@ struct HomeView: View {
                         guard requireSignIn() else {
                             return
                         }
+                        let file = uploadedFile
+                        self.uploadedFile = nil
+                        uploadError = nil
                         isPromptFocused = false
                         QiheKeyboard.dismiss()
-                        appState.path.append(.review(prefill: nil, attachment: uploadedFile))
+                        appState.path.append(.review(prefill: nil, attachment: file))
                     }
                     .font(QiheFont.caption(size: 12, weight: .semibold))
                     .foregroundStyle(.white)
@@ -366,6 +369,7 @@ struct HomeView: View {
         }
         isUploading = true
         uploadError = nil
+        uploadedFile = nil
         defer { isUploading = false }
 
         do {
