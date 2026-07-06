@@ -82,8 +82,7 @@ final class HistoryStore: ObservableObject {
     func saveReview(
         requestText: String,
         attachment: UploadedFile?,
-        result: ReviewResult,
-        reviewPerspective: ReviewPerspective? = nil
+        result: ReviewResult
     ) -> UUID {
         let record = HistoryRecord(
             type: .review,
@@ -93,8 +92,7 @@ final class HistoryStore: ObservableObject {
             reviewPayload: ReviewHistoryPayload(
                 requestText: requestText,
                 attachment: attachment,
-                result: result,
-                reviewPerspective: reviewPerspective
+                result: result
             )
         )
         upsert(record)

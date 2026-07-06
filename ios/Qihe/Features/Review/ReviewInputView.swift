@@ -10,7 +10,6 @@ struct ReviewInputView: View {
     @State private var contractType = ""
     @State private var userRole = ""
     @State private var focusAreas = ""
-    @State private var reviewPerspective: ReviewPerspective = .neutral
     @State private var hasMigratedExtraInfo = false
     @State private var attachment: UploadedFile?
     @State private var isFileImporterPresented = false
@@ -50,8 +49,6 @@ struct ReviewInputView: View {
                     if shouldUseUploadedFileAsPrimary && hasText {
                         priorityNotice
                     }
-
-                    reviewPerspectivePicker
 
                     additionalInfoSection
 
@@ -116,7 +113,6 @@ struct ReviewInputView: View {
         }
         .onAppear {
             migrateExtraInfoIfNeeded()
-            restoreReviewPerspectiveFromHistory()
         }
     }
 
@@ -249,24 +245,6 @@ struct ReviewInputView: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(QiheColor.lineStrong, style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
         )
-    }
-
-    private var reviewPerspectivePicker: some View {
-        PaperCard(padding: 14) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("审查立场")
-                    .font(QiheFont.caption(size: 12, weight: .semibold))
-                    .foregroundStyle(QiheColor.muted)
-
-                Picker("审查立场", selection: $reviewPerspective) {
-                    ForEach(ReviewPerspective.allCases, id: \.self) { perspective in
-                        Text(perspective.label).tag(perspective)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .disabled(isRunning)
-            }
-        }
     }
 
     private var additionalInfoSection: some View {
@@ -423,7 +401,6 @@ struct ReviewInputView: View {
         if let focusAreas = focusAreas.nilIfBlank {
             metadata["focus_areas"] = .string(focusAreas)
         }
-        metadata["review_perspective"] = .string(reviewPerspective.rawValue)
         return metadata
     }
 
@@ -542,8 +519,7 @@ struct ReviewInputView: View {
             let id = historyStore.saveReview(
                 requestText: currentRequestText ?? "",
                 attachment: currentAttachment,
-                result: result,
-                reviewPerspective: reviewPerspective
+                result: result
             )
             appState.path.append(.reviewResult(recordId: id))
         } catch {
@@ -592,16 +568,6 @@ struct ReviewInputView: View {
         if hasReviewMetadata {
             isAdditionalInfoExpanded = true
         }
-    }
-
-    private func restoreReviewPerspectiveFromHistory() {
-        guard let lastReview = historyStore.records
-            .first(where: { $0.type == .review && $0.reviewPayload?.reviewPerspective != nil }),
-              let savedPerspective = lastReview.reviewPayload?.reviewPerspective
-        else {
-            return
-        }
-        reviewPerspective = savedPerspective
     }
 
     private func parseLegacyExtraInfo(_ value: String) -> ReviewMetadataDraft {
