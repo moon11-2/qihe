@@ -22,6 +22,23 @@ enum ContractMode: String, Codable, Hashable {
     case generate
 }
 
+enum ReviewPerspective: String, Codable, Hashable, CaseIterable {
+    case partyA = "party_a"
+    case partyB = "party_b"
+    case neutral
+
+    var label: String {
+        switch self {
+        case .partyA:
+            return "我是甲方"
+        case .partyB:
+            return "我是乙方"
+        case .neutral:
+            return "中立角度"
+        }
+    }
+}
+
 enum ChatRole: String, Codable, Hashable {
     case system
     case user
@@ -775,6 +792,7 @@ struct ReviewHistoryPayload: Codable, Hashable {
     var requestText: String
     var attachment: UploadedFile?
     var result: ReviewResult
+    var reviewPerspective: ReviewPerspective?
 }
 
 struct GenerateHistoryPayload: Codable, Hashable {
