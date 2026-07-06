@@ -512,6 +512,10 @@ struct ReviewInputView: View {
                 originalText: result.source?.originalText ?? currentRequestText
             )
             result.source = source
+            result = result.repairingWeakFallback(
+                requestText: currentRequestText,
+                attachment: currentAttachment
+            )
             let id = historyStore.saveReview(
                 requestText: currentRequestText ?? "",
                 attachment: currentAttachment,
