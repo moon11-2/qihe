@@ -820,6 +820,50 @@ struct HistoryRecord: Identifiable, Codable, Hashable {
     }
 }
 
+// MARK: - 修改状态与本地修改记录
+
+/// 修改状态枚举
+enum RevisionState: String, Codable, Hashable {
+    case original
+    case draft
+    case confirmed
+}
+
+/// 本地修改记录
+struct LocalRevision: Identifiable, Codable, Hashable {
+    var id: UUID
+    var recordId: UUID
+    var segmentId: String
+    var riskId: String?
+    var beforeText: String
+    var afterText: String
+    var status: RevisionState
+    var createdAt: Date
+    var updatedAt: Date
+
+    init(
+        id: UUID = UUID(),
+        recordId: UUID,
+        segmentId: String,
+        riskId: String? = nil,
+        beforeText: String,
+        afterText: String,
+        status: RevisionState = .confirmed,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.recordId = recordId
+        self.segmentId = segmentId
+        self.riskId = riskId
+        self.beforeText = beforeText
+        self.afterText = afterText
+        self.status = status
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}
+
 enum JSONValue: Codable, Hashable, Sendable {
     case string(String)
     case number(Double)
