@@ -52,6 +52,8 @@ struct RootView: View {
             SubjectView(recordId: recordId)
         case let .generateResult(recordId):
             GenerateResultView(recordId: recordId)
+        case let .progress(jobId, mode):
+            ContractProgressView(jobId: jobId, mode: mode)
         }
     }
 }

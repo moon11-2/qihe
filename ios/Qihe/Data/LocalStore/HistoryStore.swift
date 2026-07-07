@@ -181,3 +181,124 @@ final class HistoryStore: ObservableObject {
         return decoder
     }()
 }
+
+// MARK: - Job 轮询管理器（任务四）
+
+/// 异步任务轮询管理器：定期向后端查询 job 状态
+@MainActor
+final class JobPollingStore: ObservableObject {
+    @Published private(set) var currentJob: ContractJob?
+    @Published private(set) var currentStep: String = "正在提交..."
+    @Published private(set) var isPolling = false
+    @Published private(set) var errorMessage: String?
+    @Published private(set) var completedRecordId: UUID?
+    @Published private(set) var completedMode: ContractMode?
+
+    private var timer: Timer?
+    private var pollCount = 0
+    private let maxPolls = 200
+    private let interval: TimeInterval = 1.5
+
+    var apiClient: APIClient?
+    var historyStore: HistoryStore?
+
+    func startPolling(jobId: String, mode: ContractMode) {
+        stopPolling()
+        currentJob = ContractJob(id: jobId, status: .queued, mode: mode)
+        currentStep = mode == .review ? "正在提交审查..." : "正在提交生成..."
+        errorMessage = nil
+        completedRecordId = nil
+        completedMode = nil
+        isPolling = true
+        pollCount = 0
+        schedulePoll()
+    }
+
+    func stopPolling() {
+        timer?.invalidate()
+        timer = nil
+        isPolling = false
+    }
+
+    func cancelPolling() {
+        stopPolling()
+        currentJob = nil
+        currentStep = ""
+        errorMessage = nil
+    }
+
+    private func schedulePoll() {
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in await self?.poll() }
+        }
+    }
+
+    private func poll() async {
+        guard isPolling, let jobId = currentJob?.id, let apiClient else { return }
+        pollCount += 1
+        guard pollCount <= maxPolls else {
+            await finishWithError("处理超时，请稍后重试。")
+            return
+        }
+        do {
+            let job = try await apiClient.pollJob(jobId: jobId)
+            currentJob = job
+            currentStep = job.step ?? defaultStep(for: job.status, mode: job.mode)
+            switch job.status {
+            case .queued, .running: schedulePoll()
+            case .succeeded: await handleSucceeded(job)
+            case .failed: await finishWithError(job.errorMessage ?? "任务处理失败，请稍后重试。")
+            }
+        } catch {
+            if isCancellation(error) { return }
+            schedulePoll()
+        }
+    }
+
+    private func defaultStep(for status: JobStatus, mode: ContractMode?) -> String {
+        let isReview = mode == .review
+        switch status {
+        case .queued: return isReview ? "审查任务排队中..." : "生成任务排队中..."
+        case .running: return isReview ? "正在分析合同..." : "正在起草合同..."
+        case .succeeded: return isReview ? "审查报告已生成" : "合同草案已生成"
+        case .failed: return "任务处理失败"
+        }
+    }
+
+    private func handleSucceeded(_ job: ContractJob) async {
+        guard let historyStore else {
+            await finishWithError("数据存储不可用。")
+            return
+        }
+        isPolling = false
+        timer?.invalidate()
+        timer = nil
+        let mode = job.mode ?? currentJob?.mode ?? .review
+        let recordId: UUID
+        switch mode {
+        case .review:
+            guard let result = job.reviewResult else { await finishWithError("审查结果异常。"); return }
+            recordId = historyStore.saveReview(requestText: "", attachment: nil, result: result)
+        case .generate:
+            guard let result = job.generateResult else { await finishWithError("生成结果异常。"); return }
+            recordId = historyStore.saveGenerate(requestText: "", attachment: nil, result: result)
+        }
+        completedRecordId = recordId
+        completedMode = mode
+    }
+
+    private func finishWithError(_ message: String) async {
+        isPolling = false
+        timer?.invalidate()
+        timer = nil
+        errorMessage = message
+    }
+
+    private func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if let urlError = error as? URLError, urlError.code == .cancelled { return true }
+        let nsError = error as NSError
+        return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled
+    }
+}

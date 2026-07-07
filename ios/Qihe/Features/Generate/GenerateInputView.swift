@@ -315,7 +315,7 @@ struct GenerateInputView: View {
         activeGenerateRunID = runID
 
         generationTask = Task {
-            await runGenerate(
+            await runGenerateJob(
                 runID: runID,
                 requestText: requestText,
                 requestAttachment: requestAttachment,
@@ -332,8 +332,9 @@ struct GenerateInputView: View {
         isRunning = false
     }
 
+    /// 任务四：通过 job 方式提交生成
     @MainActor
-    private func runGenerate(
+    private func runGenerateJob(
         runID: UUID,
         requestText: String,
         requestAttachment: UploadedFile?,
@@ -344,31 +345,17 @@ struct GenerateInputView: View {
         }
 
         do {
-            var result = try await appState.apiClient.runGenerate(
+            let jobId = try await appState.apiClient.submitGenerateJob(
                 text: requestText,
                 file: requestAttachment,
                 metadata: metadata
             )
-            guard !Task.isCancelled, activeGenerateRunID == runID else {
-                return
-            }
-            let source = ContractSource(
-                textPreview: result.source?.textPreview ?? requestText.truncated(to: 240),
-                fileId: result.source?.fileId ?? requestAttachment?.fileId,
-                filename: result.source?.filename ?? requestAttachment?.filename,
-                originalText: result.source?.originalText ?? requestText.nilIfBlank
-            )
-            result.source = source
-            let id = historyStore.saveGenerate(
-                requestText: requestText,
-                attachment: requestAttachment,
-                result: result
-            )
-            appState.path.append(.generateResult(recordId: id))
+            guard !Task.isCancelled, activeGenerateRunID == runID else { return }
+
+            // 导航到进度页
+            appState.path.append(.progress(jobId: jobId, mode: .generate))
         } catch {
-            guard !isCancellation(error), activeGenerateRunID == runID else {
-                return
-            }
+            guard !isCancellation(error), activeGenerateRunID == runID else { return }
             errorMessage = error.qiheDisplayMessage
         }
     }

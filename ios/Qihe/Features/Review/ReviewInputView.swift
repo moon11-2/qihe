@@ -469,7 +469,7 @@ struct ReviewInputView: View {
         isRunning = true
         errorMessage = nil
         let task = Task {
-            await runReview(token: token)
+            await runReviewJob(token: token)
         }
         reviewTask = task
     }
@@ -481,7 +481,8 @@ struct ReviewInputView: View {
         isRunning = false
     }
 
-    private func runReview(token: UUID) async {
+    /// 任务四：通过 job 方式提交审查
+    private func runReviewJob(token: UUID) async {
         let currentRequestText = requestText
         let currentRequestFile = requestFile
         let currentAttachment = attachment
@@ -496,53 +497,21 @@ struct ReviewInputView: View {
         }
 
         do {
-            var result = try await runReviewRequest(
+            let jobId = try await appState.apiClient.submitReviewJob(
                 text: currentRequestText,
                 file: currentRequestFile,
                 metadata: currentMetadata
             )
             try Task.checkCancellation()
-            guard activeReviewToken == token else {
-                return
-            }
-            let source = ContractSource(
-                textPreview: result.source?.textPreview ?? currentRequestText?.truncated(to: 240),
-                fileId: result.source?.fileId ?? currentRequestFile?.fileId,
-                filename: result.source?.filename ?? currentRequestFile?.filename,
-                originalText: result.source?.originalText ?? currentRequestText
-            )
-            result.source = source
-            result = result.repairingWeakFallback(
-                requestText: currentRequestText,
-                attachment: currentAttachment
-            )
-            let id = historyStore.saveReview(
-                requestText: currentRequestText ?? "",
-                attachment: currentAttachment,
-                result: result
-            )
-            appState.path.append(.reviewResult(recordId: id))
+            guard activeReviewToken == token else { return }
+
+            // 导航到进度页
+            appState.path.append(.progress(jobId: jobId, mode: .review))
         } catch {
-            guard activeReviewToken == token else {
-                return
-            }
-            if isCancellation(error) || Task.isCancelled {
-                return
-            }
+            guard activeReviewToken == token else { return }
+            if isCancellation(error) || Task.isCancelled { return }
             errorMessage = error.qiheDisplayMessage
         }
-    }
-
-    private func runReviewRequest(
-        text: String?,
-        file: UploadedFile?,
-        metadata: [String: JSONValue]
-    ) async throws -> ReviewResult {
-        try await appState.apiClient.runReview(
-            text: text,
-            file: file,
-            metadata: metadata
-        )
     }
 
     private func migrateExtraInfoIfNeeded() {
@@ -690,5 +659,195 @@ private struct LinedPaperBackground: View {
             .stroke(QiheColor.line, lineWidth: 1)
         }
         .allowsHitTesting(false)
+    }
+}
+
+// MARK: - 合同进度页通用视图（任务四）
+
+/// 审查/生成共用的进度页面，展示任务处理进度和步骤文案。
+struct ContractProgressView: View {
+    @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var jobPollingStore: JobPollingStore
+
+    let jobId: String
+    let mode: ContractMode
+
+    @State private var cancelled = false
+
+    private let dotTimer = Timer.publish(every: 0.45, on: .main, in: .common).autoconnect()
+    @State private var dotPhase = 0
+
+    var body: some View {
+        ZStack {
+            QiheColor.paper.ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                Spacer()
+
+                VStack(spacing: 28) {
+                    progressAnimation
+                        .frame(width: 100, height: 100)
+
+                    VStack(spacing: 12) {
+                        Text(titleText)
+                            .font(QiheFont.title(size: 20))
+                            .foregroundStyle(QiheColor.ink)
+                            .multilineTextAlignment(.center)
+
+                        Text(jobPollingStore.currentStep.isEmpty
+                             ? "请稍候..."
+                             : jobPollingStore.currentStep)
+                            .font(QiheFont.body(size: 14))
+                            .foregroundStyle(QiheColor.muted)
+                            .multilineTextAlignment(.center)
+                            .animation(.easeInOut(duration: 0.3), value: jobPollingStore.currentStep)
+                    }
+
+                    progressSteps
+                }
+                .padding(.horizontal, 40)
+
+                Spacer()
+
+                if jobPollingStore.isPolling {
+                    Button {
+                        cancelAndGoBack()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "xmark.circle")
+                            Text("取消")
+                        }
+                        .font(QiheFont.body(size: 15, weight: .medium))
+                        .foregroundStyle(QiheColor.muted)
+                    }
+                    .padding(.bottom, 40)
+                }
+
+                if let errorMessage = jobPollingStore.errorMessage {
+                    VStack(spacing: 12) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 16))
+                            Text(errorMessage)
+                                .font(QiheFont.body(size: 14))
+                        }
+                        .foregroundStyle(QiheColor.seal)
+                        .padding(14)
+                        .background(QiheColor.sealSoft.opacity(0.6))
+                        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous))
+
+                        QiheSecondaryButton(title: "返回", systemImage: "arrow.left") {
+                            goBack()
+                        }
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 40)
+                }
+            }
+        }
+        .navigationTitle(mode == .review ? "审查进度" : "生成进度")
+        .qiheInlineNavigationTitle()
+        .navigationBarBackButtonHidden(jobPollingStore.isPolling)
+        .onAppear {
+            if !cancelled {
+                jobPollingStore.startPolling(jobId: jobId, mode: mode)
+            }
+        }
+        .onDisappear {
+            jobPollingStore.stopPolling()
+        }
+        .onReceive(dotTimer) { _ in
+            dotPhase = (dotPhase + 1) % 3
+        }
+        .onChange(of: jobPollingStore.completedRecordId) { _, recordId in
+            guard let recordId, let mode = jobPollingStore.completedMode else { return }
+            switch mode {
+            case .review: appState.path.append(.reviewResult(recordId: recordId))
+            case .generate: appState.path.append(.generateResult(recordId: recordId))
+            }
+        }
+    }
+
+    private var titleText: String {
+        if let job = jobPollingStore.currentJob {
+            switch job.status {
+            case .queued: return mode == .review ? "审查任务已提交" : "生成任务已提交"
+            case .running: return mode == .review ? "正在审查合同" : "正在生成合同"
+            case .succeeded: return mode == .review ? "审查完成" : "生成完成"
+            case .failed: return "处理失败"
+            }
+        }
+        return mode == .review ? "准备审查..." : "准备生成..."
+    }
+
+    @ViewBuilder
+    private var progressAnimation: some View {
+        if jobPollingStore.errorMessage != nil {
+            ZStack {
+                Circle().stroke(QiheColor.seal.opacity(0.2), lineWidth: 6).frame(width: 80, height: 80)
+                Image(systemName: "xmark").font(.system(size: 30, weight: .semibold)).foregroundStyle(QiheColor.seal)
+            }
+        } else if case .succeeded = jobPollingStore.currentJob?.status {
+            ZStack {
+                Circle().stroke(QiheColor.pine.opacity(0.2), lineWidth: 6).frame(width: 80, height: 80)
+                Image(systemName: "checkmark").font(.system(size: 30, weight: .semibold)).foregroundStyle(QiheColor.pine)
+            }
+        } else {
+            ZStack {
+                Circle().stroke(QiheColor.navy.opacity(0.15), lineWidth: 6).frame(width: 80, height: 80)
+                Circle()
+                    .trim(from: 0, to: 0.75)
+                    .stroke(
+                        AngularGradient(colors: [QiheColor.navy, QiheColor.pine, QiheColor.navy], center: .center),
+                        style: StrokeStyle(lineWidth: 6, lineCap: .round)
+                    )
+                    .frame(width: 80, height: 80)
+                    .rotationEffect(.degrees(jobPollingStore.isPolling ? 360 : 0))
+                    .animation(.linear(duration: 2.2).repeatForever(autoreverses: false), value: jobPollingStore.isPolling)
+                SealMark(size: 32).opacity(0.6)
+            }
+        }
+    }
+
+    private var progressSteps: some View {
+        let isReview = mode == .review
+        let status = jobPollingStore.currentJob?.status ?? .queued
+        let steps: [(title: String, isDone: Bool, isActive: Bool)] = [
+            (isReview ? "提交审查" : "提交生成", status != .queued, status == .queued),
+            (isReview ? "分析合同" : "起草合同", status == .succeeded, status == .running),
+            (isReview ? "识别风险" : "补充字段", status == .succeeded, false),
+            (isReview ? "生成报告" : "生成清单", status == .succeeded, status == .succeeded)
+        ]
+        return VStack(spacing: 10) {
+            ForEach(Array(steps.enumerated()), id: \.offset) { _, step in
+                HStack(spacing: 12) {
+                    Circle()
+                        .fill(step.isDone ? QiheColor.pine : (step.isActive ? QiheColor.navy : QiheColor.line))
+                        .frame(width: 10, height: 10)
+                        .overlay(
+                            Circle()
+                                .stroke(step.isActive ? QiheColor.navy.opacity(0.35) : .clear, lineWidth: 3)
+                                .scaleEffect(step.isActive ? 1.6 : 1)
+                                .animation(.easeInOut(duration: 1).repeatForever(autoreverses: true), value: step.isActive)
+                        )
+                    Text(step.title)
+                        .font(QiheFont.body(size: 13))
+                        .foregroundStyle(step.isDone ? QiheColor.pine : (step.isActive ? QiheColor.ink : QiheColor.muted))
+                    Spacer()
+                }
+            }
+        }
+        .frame(maxWidth: 240)
+        .padding(.top, 16)
+    }
+
+    private func cancelAndGoBack() {
+        cancelled = true
+        jobPollingStore.cancelPolling()
+        goBack()
+    }
+
+    private func goBack() {
+        if !appState.path.isEmpty { appState.path.removeLast() }
     }
 }

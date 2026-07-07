@@ -124,6 +124,54 @@ struct APIClient {
         try await exportWord(type: .generate, title: title, payload: payload)
     }
 
+    // MARK: - Job 接口（任务四）
+
+    /// 提交审查异步任务，返回 job_id
+    func submitReviewJob(
+        text: String?,
+        file: UploadedFile?,
+        metadata structuredMetadata: [String: JSONValue] = [:]
+    ) async throws -> String {
+        let body = ReviewJobRequest(
+            text: text?.trimmedForInput.nilIfBlank,
+            fileId: file?.fileId,
+            metadata: metadata(for: file, merging: structuredMetadata)
+        )
+        let response: JobCreatedResponse = try await send(
+            path: "api/contracts/review-jobs",
+            method: "POST",
+            body: body
+        )
+        return response.jobId
+    }
+
+    /// 提交生成异步任务，返回 job_id
+    func submitGenerateJob(
+        text: String?,
+        file: UploadedFile?,
+        metadata structuredMetadata: [String: JSONValue] = [:]
+    ) async throws -> String {
+        let body = GenerateJobRequest(
+            text: text?.trimmedForInput.nilIfBlank,
+            fileId: file?.fileId,
+            metadata: metadata(for: file, merging: structuredMetadata)
+        )
+        let response: JobCreatedResponse = try await send(
+            path: "api/contracts/generate-jobs",
+            method: "POST",
+            body: body
+        )
+        return response.jobId
+    }
+
+    /// 轮询 job 状态
+    func pollJob(jobId: String) async throws -> ContractJob {
+        try await send(
+            path: "api/jobs/\(jobId)",
+            method: "GET"
+        )
+    }
+
     // MARK: - Revision 同步（任务三）
 
     /// 同步修改记录到后端

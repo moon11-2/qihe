@@ -1,5 +1,96 @@
 import Foundation
 
+// MARK: - Job 数据传输对象（任务四）
+
+/// 后端异步任务状态枚举
+enum JobStatus: String, Codable, Hashable, Sendable {
+    case queued
+    case running
+    case succeeded
+    case failed
+
+    var label: String {
+        switch self {
+        case .queued: return "排队中"
+        case .running: return "处理中"
+        case .succeeded: return "已完成"
+        case .failed: return "已失败"
+        }
+    }
+
+    var isTerminal: Bool { self == .succeeded || self == .failed }
+}
+
+/// 后端异步任务响应
+struct ContractJob: Codable, Hashable, Identifiable, Sendable {
+    var id: String
+    var status: JobStatus
+    var step: String?
+    var mode: ContractMode?
+    var reviewResult: ReviewResult?
+    var generateResult: GenerateResult?
+    var errorMessage: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, status, step, mode
+        case reviewResult = "review_result"
+        case generateResult = "generate_result"
+        case errorMessage = "error_message"
+    }
+
+    init(
+        id: String = "",
+        status: JobStatus = .queued,
+        step: String? = nil,
+        mode: ContractMode? = nil,
+        reviewResult: ReviewResult? = nil,
+        generateResult: GenerateResult? = nil,
+        errorMessage: String? = nil
+    ) {
+        self.id = id
+        self.status = status
+        self.step = step
+        self.mode = mode
+        self.reviewResult = reviewResult
+        self.generateResult = generateResult
+        self.errorMessage = errorMessage
+    }
+}
+
+/// 提交审查 job 的请求体
+struct ReviewJobRequest: Codable, Hashable {
+    let text: String?
+    let fileId: String?
+    let metadata: [String: JSONValue]
+
+    enum CodingKeys: String, CodingKey {
+        case text
+        case fileId = "file_id"
+        case metadata
+    }
+}
+
+/// 提交生成 job 的请求体
+struct GenerateJobRequest: Codable, Hashable {
+    let text: String?
+    let fileId: String?
+    let metadata: [String: JSONValue]
+
+    enum CodingKeys: String, CodingKey {
+        case text
+        case fileId = "file_id"
+        case metadata
+    }
+}
+
+/// 提交 job 后的初始响应（只包含 job_id）
+struct JobCreatedResponse: Decodable {
+    let jobId: String
+    enum CodingKeys: String, CodingKey { case jobId = "job_id" }
+}
+
+// MARK: - 历史记录类型
+
 enum HistoryKind: String, Codable, CaseIterable, Hashable {
     case chat
     case review

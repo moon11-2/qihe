@@ -7,4 +7,6 @@ enum AppRoute: Hashable {
     case reviewResult(recordId: UUID)
     case subject(recordId: UUID)
     case generateResult(recordId: UUID)
+    /// 任务四：进度页路由
+    case progress(jobId: String, mode: ContractMode)
 }
