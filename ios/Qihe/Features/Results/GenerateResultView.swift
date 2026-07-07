@@ -12,10 +12,13 @@ struct GenerateResultView: View {
     @EnvironmentObject private var historyStore: HistoryStore
     let recordId: UUID
     @State private var fieldValues: [String: String] = [:]
+    @State private var editedParagraphIds: Set<String> = []
+    @State private var scrollToSegmentId: String? = nil
     @State private var isExporting = false
     @State private var shareDocument: ShareDocument?
     @State private var errorMessage: String?
     @State private var didCopy = false
+    @State private var showLocateDialog = false
 
     var body: some View {
         ZStack {
@@ -32,8 +35,7 @@ struct GenerateResultView: View {
                             }
                         }
 
-                        contractSheet(payload)
-                        missingFieldsForm(payload)
+                        contractEditorSheet(payload)
                         checklist(payload.result)
                         actions(payload)
 
@@ -75,9 +77,8 @@ struct GenerateResultView: View {
         }
     }
 
-    private func contractSheet(_ payload: GenerateHistoryPayload) -> some View {
-        let draft = renderedDraft(payload.result)
-        return VStack(alignment: .leading, spacing: 10) {
+    private func contractEditorSheet(_ payload: GenerateHistoryPayload) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 10) {
                 SealMark(size: 32)
                 VStack(alignment: .leading, spacing: 3) {
@@ -102,12 +103,13 @@ struct GenerateResultView: View {
                     .foregroundStyle(QiheColor.muted)
                     .frame(maxWidth: .infinity)
 
-                Text(draft.nilIfBlank ?? "暂无合同草案。")
-                    .font(QiheFont.document(size: 13))
-                    .foregroundStyle(QiheColor.inkSoft)
-                    .lineSpacing(7)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                GeneratedContractEditorView(
+                    draft: payload.result.draft ?? "",
+                    fieldValues: $fieldValues,
+                    editedParagraphIds: $editedParagraphIds,
+                    scrollToSegmentId: $scrollToSegmentId
+                )
+                .frame(minHeight: 200)
             }
             .padding(18)
             .background(QiheColor.card)
@@ -137,42 +139,7 @@ struct GenerateResultView: View {
         }
     }
 
-    private func missingFieldsForm(_ payload: GenerateHistoryPayload) -> some View {
-        let fields = fieldNames(for: payload.result)
-        return PaperCard(padding: 14) {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("待补充信息")
-                    .font(QiheFont.title(size: 14))
-                    .foregroundStyle(QiheColor.ink)
 
-                if fields.isEmpty {
-                    Text("暂无待补充字段。")
-                        .font(QiheFont.body(size: 14))
-                        .foregroundStyle(QiheColor.muted)
-                } else {
-                    ForEach(fields, id: \.self) { field in
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(field)
-                                .font(QiheFont.caption(size: 12, weight: .semibold))
-                                .foregroundStyle(QiheColor.seal)
-
-                            TextField("填写\(field)", text: binding(for: field))
-                                .font(QiheFont.body(size: 14))
-                                .foregroundStyle(QiheColor.ink)
-                                .padding(.horizontal, 10)
-                                .frame(height: 38)
-                                .background(QiheColor.paper)
-                                .clipShape(RoundedRectangle(cornerRadius: QiheRadius.xs, style: .continuous))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: QiheRadius.xs, style: .continuous)
-                                        .stroke(QiheColor.line, lineWidth: 1)
-                                )
-                        }
-                    }
-                }
-            }
-        }
-    }
 
     private func checklist(_ result: GenerateResult) -> some View {
         PaperCard(padding: 14) {
@@ -224,11 +191,48 @@ struct GenerateResultView: View {
                 }
             }
 
+            QiheSecondaryButton(title: "定位", systemImage: "location.magnifyingglass") {
+                showLocateDialog = true
+            }
+
             QihePrimaryButton(title: "继续修改", systemImage: "square.and.pencil") {
                 guard requireSignIn() else {
                     return
                 }
                 appState.path.append(.generate(prefill: renderedDraft(payload.result)))
+            }
+        }
+        .confirmationDialog("定位到未填项", isPresented: $showLocateDialog, titleVisibility: .visible) {
+            let unfilledPlaceholders = placeholders(in: payload.result.draft ?? "")
+                .filter { fieldValues[$0]?.nilIfBlank == nil }
+
+            if unfilledPlaceholders.isEmpty {
+                Button("所有占位符已填写完毕") {}
+            } else {
+                ForEach(unfilledPlaceholders, id: \.self) { name in
+                    Button(name) {
+                        let parsed = DraftSegmentParser.parse(payload.result.draft ?? "")
+                        if let target = parsed.first(where: { segment in
+                            if case .placeholder(let n) = segment.kind, n == name {
+                                return true
+                            }
+                            return false
+                        }) {
+                            scrollToSegmentId = target.id
+                        }
+                    }
+                }
+            }
+
+            Button("取消", role: .cancel) {}
+        } message: {
+            let unfilledCount = placeholders(in: payload.result.draft ?? "")
+                .filter { fieldValues[$0]?.nilIfBlank == nil }
+                .count
+            if unfilledCount > 0 {
+                Text("还有 \(unfilledCount) 个占位符未填写")
+            } else {
+                Text("所有占位符已填写完毕")
             }
         }
     }

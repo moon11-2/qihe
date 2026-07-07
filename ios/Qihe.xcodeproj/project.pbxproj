@@ -32,6 +32,8 @@
 		A0000000000000000000003E /* AuthState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000041 /* AuthState.swift */; };
 		A0000000000000000000003F /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000042 /* ProfileView.swift */; };
 		A00000000000000000000044 /* RevisionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000043 /* RevisionStore.swift */; };
+		A00000000000000000000045 /* GeneratedContractEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000046 /* GeneratedContractEditorView.swift */; };
+		A00000000000000000000047 /* ContractSegmentModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000048 /* ContractSegmentModels.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -62,6 +64,8 @@
 		A00000000000000000000041 /* AuthState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/AuthState.swift; sourceTree = "<group>"; };
 		A00000000000000000000042 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Profile/ProfileView.swift; sourceTree = "<group>"; };
 		A00000000000000000000043 /* RevisionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Data/LocalStore/RevisionStore.swift; sourceTree = "<group>"; };
+		A00000000000000000000046 /* GeneratedContractEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Generate/GeneratedContractEditorView.swift; sourceTree = "<group>"; };
+		A00000000000000000000048 /* ContractSegmentModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Editor/ContractSegmentModels.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -108,9 +112,11 @@
 				A0000000000000000000001C /* QiheTypography.swift */,
 				A0000000000000000000001D /* ChatView.swift */,
 				A0000000000000000000001E /* GenerateInputView.swift */,
+				A00000000000000000000046 /* GeneratedContractEditorView.swift */,
 				A0000000000000000000001F /* HistoryView.swift */,
 				A00000000000000000000020 /* HomeView.swift */,
 				A00000000000000000000021 /* GenerateResultView.swift */,
+				A00000000000000000000048 /* ContractSegmentModels.swift */,
 				A00000000000000000000022 /* ReviewResultView.swift */,
 				A0000000000000000000003A /* ShareSheet.swift */,
 				A00000000000000000000023 /* ReviewInputView.swift */,
@@ -206,6 +212,7 @@
 				A0000000000000000000002E /* QiheTypography.swift in Sources */,
 				A0000000000000000000002F /* ChatView.swift in Sources */,
 				A00000000000000000000030 /* GenerateInputView.swift in Sources */,
+				A00000000000000000000045 /* GeneratedContractEditorView.swift in Sources */,
 				A00000000000000000000031 /* HistoryView.swift in Sources */,
 				A00000000000000000000032 /* HomeView.swift in Sources */,
 				A00000000000000000000033 /* GenerateResultView.swift in Sources */,
@@ -215,6 +222,7 @@
 				A0000000000000000000003B /* SubjectView.swift in Sources */,
 				A0000000000000000000003F /* ProfileView.swift in Sources */,
 				A00000000000000000000044 /* RevisionStore.swift in Sources */,
+				A00000000000000000000047 /* ContractSegmentModels.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
