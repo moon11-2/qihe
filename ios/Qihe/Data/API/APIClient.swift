@@ -33,6 +33,29 @@ struct APIClient {
         return response.session
     }
 
+    // MARK: - 验证码登录（任务五）
+
+    /// 发送邮箱验证码
+    func sendVerificationCode(email: String) async throws {
+        try await send(
+            path: "api/auth/send-code",
+            method: "POST",
+            body: AuthSendCodeRequest(email: email),
+            requiresAuth: false
+        ) as EmptyResponse
+    }
+
+    /// 验证码登录
+    func verifyCode(email: String, code: String) async throws -> AuthSession {
+        let response: AuthTokenAPIResponse = try await send(
+            path: "api/auth/verify-code",
+            method: "POST",
+            body: AuthVerifyCodeRequest(email: email, code: code),
+            requiresAuth: false
+        )
+        return response.session
+    }
+
     func me() async throws -> AuthUser {
         let response: AuthAPIUser = try await send(path: "api/auth/me", method: "GET")
         return response.user
@@ -353,6 +376,20 @@ private struct AuthLoginRequest: Encodable {
     let email: String
     let password: String
 }
+
+/// 任务五：发送验证码请求
+private struct AuthSendCodeRequest: Encodable {
+    let email: String
+}
+
+/// 任务五：验证码登录请求
+private struct AuthVerifyCodeRequest: Encodable {
+    let email: String
+    let code: String
+}
+
+/// 空响应类型（用于无 body 返回的接口）
+private struct EmptyResponse: Decodable {}
 
 private struct AuthTokenAPIResponse: Decodable {
     let accessToken: String

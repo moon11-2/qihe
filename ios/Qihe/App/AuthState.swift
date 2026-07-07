@@ -7,6 +7,16 @@ final class AuthStore: ObservableObject {
     @Published var isSubmitting = false
     @Published var message: String?
 
+    /// 任务五：验证码登录
+    @Published var showVerificationCode = false
+    @Published var verificationCode = ""
+    @Published var codeCountdown = 0
+    @Published var isSendingCode = false
+    private var countdownTimer: Timer?
+
+    /// 任务五：是否显示旧密码登录入口（默认隐藏）
+    @Published var showPasswordLogin = false
+
     private let apiClient: APIClient
     private let sessionStorage: AuthSessionStorage
 
@@ -21,6 +31,9 @@ final class AuthStore: ObservableObject {
     func switchMode(_ mode: AuthMode) {
         self.mode = mode
         message = nil
+        showVerificationCode = false
+        verificationCode = ""
+        stopCountdown()
     }
 
     func submit(emailOrPhone: String, password: String, displayName: String?) async {
@@ -65,6 +78,79 @@ final class AuthStore: ObservableObject {
         } catch {
             message = error.qiheDisplayMessage
         }
+    }
+
+    // MARK: - 验证码登录（任务五）
+
+    /// 发送邮箱验证码
+    func sendVerificationCode(email: String) async {
+        let account = email.trimmedForInput.lowercased()
+        guard account.contains("@"), !account.isEmpty else {
+            message = "请输入有效的邮箱地址。"
+            return
+        }
+
+        guard codeCountdown <= 0 else { return }
+
+        isSendingCode = true
+        message = nil
+        defer { isSendingCode = false }
+
+        do {
+            try await apiClient.sendVerificationCode(email: account)
+            showVerificationCode = true
+            verificationCode = ""
+            startCountdown()
+            message = "验证码已发送，请查收邮箱。"
+        } catch {
+            message = error.qiheDisplayMessage
+        }
+    }
+
+    /// 验证码登录
+    func verifyCode(email: String, code: String) async {
+        let account = email.trimmedForInput.lowercased()
+        let code = code.trimmedForInput
+
+        guard !account.isEmpty, code.count >= 6 else {
+            message = "请输入邮箱和 6 位验证码。"
+            return
+        }
+
+        isSubmitting = true
+        message = nil
+        defer { isSubmitting = false }
+
+        do {
+            let session = try await apiClient.verifyCode(email: account, code: code)
+            sessionStorage.save(session)
+            status = .signedIn(session.user)
+            message = "登录成功。"
+            stopCountdown()
+        } catch {
+            message = error.qiheDisplayMessage
+        }
+    }
+
+    private func startCountdown() {
+        stopCountdown()
+        codeCountdown = 60
+        countdownTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if self.codeCountdown > 0 {
+                    self.codeCountdown -= 1
+                } else {
+                    self.stopCountdown()
+                }
+            }
+        }
+    }
+
+    private func stopCountdown() {
+        countdownTimer?.invalidate()
+        countdownTimer = nil
+        codeCountdown = 0
     }
 
     func signOut() {

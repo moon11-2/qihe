@@ -94,7 +94,158 @@ struct ProfileView: View {
         }
     }
 
+    // MARK: - 验证码登录（任务五）
+
     private var signedOutContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // 主流程：邮箱验证码登录
+            VStack(alignment: .leading, spacing: 14) {
+                Text("邮箱验证码登录")
+                    .font(QiheFont.body(size: 14, weight: .semibold))
+                    .foregroundStyle(QiheColor.ink)
+
+                // Step 1: 邮箱输入
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("邮箱")
+                        .font(QiheFont.caption(size: 12, weight: .semibold))
+                        .foregroundStyle(QiheColor.muted)
+
+                    HStack(spacing: 10) {
+                        TextField("请输入邮箱地址", text: $emailOrPhone)
+                            .keyboardType(.emailAddress)
+                            .autocapitalization(.none)
+                            .autocorrectionDisabled()
+                            .focused($focusedField, equals: .account)
+                            .font(QiheFont.body(size: 14))
+                            .foregroundStyle(QiheColor.ink)
+                            .padding(.horizontal, 12)
+                            .frame(height: 46)
+                            .background(QiheColor.paper)
+                            .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous)
+                                    .stroke(QiheColor.line, lineWidth: 1)
+                            )
+
+                        Button {
+                            focusedField = nil
+                            QiheKeyboard.dismiss()
+                            Task {
+                                await authStore.sendVerificationCode(email: emailOrPhone)
+                            }
+                        } label: {
+                            Group {
+                                if authStore.isSendingCode {
+                                    ProgressView()
+                                        .progressViewStyle(.circular)
+                                        .scaleEffect(0.8)
+                                } else if authStore.codeCountdown > 0 {
+                                    Text("\(authStore.codeCountdown)s")
+                                        .font(QiheFont.body(size: 14, weight: .semibold))
+                                } else {
+                                    Text("发送验证码")
+                                        .font(QiheFont.body(size: 13, weight: .semibold))
+                                }
+                            }
+                            .foregroundStyle(.white)
+                            .frame(height: 46)
+                            .padding(.horizontal, 14)
+                            .background(
+                                authStore.codeCountdown > 0 || authStore.isSendingCode
+                                    ? QiheColor.muted
+                                    : QiheColor.navy
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
+                        }
+                        .disabled(authStore.codeCountdown > 0 || authStore.isSendingCode || emailOrPhone.trimmedForInput.isEmpty)
+                    }
+                }
+
+                // Step 2: 验证码输入（发送后显示）
+                if authStore.showVerificationCode {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("验证码")
+                            .font(QiheFont.caption(size: 12, weight: .semibold))
+                            .foregroundStyle(QiheColor.muted)
+
+                        TextField("请输入 6 位验证码", text: $authStore.verificationCode)
+                            .keyboardType(.numberPad)
+                            .focused($focusedField, equals: .password)
+                            .font(QiheFont.body(size: 14))
+                            .foregroundStyle(QiheColor.ink)
+                            .padding(.horizontal, 12)
+                            .frame(height: 46)
+                            .background(QiheColor.paper)
+                            .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous)
+                                    .stroke(QiheColor.line, lineWidth: 1)
+                            )
+                            .onChange(of: authStore.verificationCode) { _, newValue in
+                                // 限制最多 6 位
+                                if newValue.count > 6 {
+                                    authStore.verificationCode = String(newValue.prefix(6))
+                                }
+                            }
+                    }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+
+                if let message = authStore.message {
+                    statusMessage(message)
+                }
+
+                // 登录按钮
+                QihePrimaryButton(
+                    title: "登录",
+                    systemImage: "envelope.badge.person.crop",
+                    isLoading: authStore.isSubmitting,
+                    isDisabled: authStore.isSubmitting || emailOrPhone.trimmedForInput.isEmpty
+                ) {
+                    focusedField = nil
+                    QiheKeyboard.dismiss()
+                    if authStore.showVerificationCode {
+                        Task {
+                            await authStore.verifyCode(
+                                email: emailOrPhone,
+                                code: authStore.verificationCode
+                            )
+                        }
+                    } else {
+                        Task {
+                            await authStore.sendVerificationCode(email: emailOrPhone)
+                        }
+                    }
+                }
+            }
+
+            Divider().background(QiheColor.line)
+
+            // 旧密码登录入口（默认隐藏，点击展开）
+            if authStore.showPasswordLogin {
+                legacyPasswordLogin
+            } else {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        authStore.showPasswordLogin = true
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "key")
+                            .font(.system(size: 12))
+                        Text("使用密码登录")
+                            .font(QiheFont.caption(size: 12))
+                    }
+                    .foregroundStyle(QiheColor.muted)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    // MARK: - 旧密码登录（保留，默认隐藏）
+
+    private var legacyPasswordLogin: some View {
         VStack(alignment: .leading, spacing: 16) {
             Picker("账号操作", selection: Binding(
                 get: { authStore.mode },
@@ -106,11 +257,11 @@ struct ProfileView: View {
             }
             .pickerStyle(.segmented)
 
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 14) {
                 VStack(spacing: 14) {
                     profileField(
-                        title: "账号",
-                        placeholder: "邮箱",
+                        title: "邮箱",
+                        placeholder: "请输入邮箱地址",
                         text: $emailOrPhone,
                         field: .account
                     )
@@ -138,7 +289,6 @@ struct ProfileView: View {
                         Image(systemName: "checkmark.circle")
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(QiheColor.pine)
-
                         Text("注册无需验证码。")
                             .font(QiheFont.caption(size: 12))
                             .foregroundStyle(QiheColor.muted)
@@ -166,6 +316,22 @@ struct ProfileView: View {
                     }
                 }
             }
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    authStore.showPasswordLogin = false
+                    authStore.message = nil
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "envelope")
+                        .font(.system(size: 12))
+                    Text("使用验证码登录")
+                        .font(QiheFont.caption(size: 12))
+                }
+                .foregroundStyle(QiheColor.muted)
+            }
+            .buttonStyle(.plain)
         }
     }
 
