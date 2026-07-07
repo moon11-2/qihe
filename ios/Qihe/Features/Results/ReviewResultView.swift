@@ -163,7 +163,8 @@ struct ReviewResultView: View {
                         recordId: recordId,
                         riskId: risk.id.uuidString,
                         beforeText: beforeText,
-                        afterText: afterText
+                        afterText: afterText,
+                        syncToBackend: true
                     )
                     selectedRiskForEdit = nil
                 }
@@ -192,14 +193,17 @@ struct ReviewResultView: View {
         } message: {
             Text("选择一个风险项，自动跳转到原文对应段落并高亮")
         }
+        .task {
+            // 任务三：视图出现时从后端拉取 revisions 并合并到本地缓存
+            await revisionStore.fetchAndMergeRevisions(recordId: recordId)
+        }
     }
 
     private func resolvedParagraphText(for risk: RiskItem) -> String {
         guard let payload = historyStore.record(id: recordId)?.reviewPayload else {
             return risk.originalExcerpt ?? risk.originalText ?? ""
         }
-        let resolvedText = resolveSourceText(from: payload)
-        let sourceMap = SourceRiskLocator.annotate(result: payload.result, sourceTextOverride: resolvedText)
+        let sourceMap = buildSourceMap(from: payload)
         if let paragraph = sourceMap.paragraphs.first(where: { $0.risks.contains(where: { $0.id == risk.id }) }) {
             return paragraph.text
         }
@@ -209,8 +213,7 @@ struct ReviewResultView: View {
     /// 定位风险：切换到原文 tab 并滚动到该风险所在的段落
     private func locateRisk(_ risk: RiskItem) {
         guard let payload = historyStore.record(id: recordId)?.reviewPayload else { return }
-        let resolvedText = resolveSourceText(from: payload)
-        let sourceMap = SourceRiskLocator.annotate(result: payload.result, sourceTextOverride: resolvedText)
+        let sourceMap = buildSourceMap(from: payload)
 
         guard let paragraph = sourceMap.paragraphs.first(where: { $0.risks.contains(where: { $0.id == risk.id }) }) else {
             // 如果在原文中无法定位，回退到风险列表 tab
@@ -253,8 +256,7 @@ struct ReviewResultView: View {
     }
 
     private func sourceTab(_ payload: ReviewHistoryPayload) -> some View {
-        let resolvedText = resolveSourceText(from: payload)
-        let sourceMap = SourceRiskLocator.annotate(result: payload.result, sourceTextOverride: resolvedText)
+        let sourceMap = buildSourceMap(from: payload)
 
         return OriginalRiskDocumentView(
             sourceMap: sourceMap,
@@ -268,6 +270,20 @@ struct ReviewResultView: View {
                 selectedRiskForDetail = risk
             }
         )
+    }
+
+    /// 构建 SourceRiskMap：优先后端 blocks，回退前端分段
+    private func buildSourceMap(from payload: ReviewHistoryPayload) -> SourceRiskMap {
+        // 任务三：优先后端 blocks
+        if let blocks = payload.result.blocks, !blocks.isEmpty {
+            return SourceRiskLocator.annotate(
+                blocks: blocks,
+                risks: payload.result.risks
+            )
+        }
+        // 回退：前端本地分段
+        let resolvedText = resolveSourceText(from: payload)
+        return SourceRiskLocator.annotate(result: payload.result, sourceTextOverride: resolvedText)
     }
 
     /// 按优先级解析合同原文来源
@@ -520,13 +536,58 @@ struct ReviewResultView: View {
         defer { isExporting = false }
 
         do {
+            // 任务三：导出时使用修改后的 blocks
+            var exportResult = payload.result
+            if let blocks = payload.result.blocks, !blocks.isEmpty {
+                let confirmedStates = revisionStore.confirmedBlockStates(for: recordId)
+                let confirmedRevisions = revisionStore.revisions(for: recordId)
+                    .filter { $0.status == .confirmed }
+                exportResult.blocks = buildExportBlocks(
+                    from: blocks,
+                    confirmedStates: confirmedStates,
+                    confirmedRevisions: confirmedRevisions
+                )
+            }
             let url = try await appState.apiClient.exportReviewWord(
                 title: payload.result.displayTitle,
-                payload: payload.result
+                payload: exportResult
             )
             shareDocument = ShareDocument(url: url)
         } catch {
             errorMessage = error.qiheDisplayMessage
+        }
+    }
+
+    /// 构建导出用的 blocks，替换已确认修改的文本（任务三）
+    private func buildExportBlocks(
+        from blocks: [ContractBlock],
+        confirmedStates: [String: RevisionState],
+        confirmedRevisions: [LocalRevision]
+    ) -> [ContractBlock] {
+        // 构建 riskId → afterText 的快速查找
+        var revisionTextByRiskID: [String: String] = [:]
+        for rev in confirmedRevisions {
+            if let riskId = rev.riskId {
+                revisionTextByRiskID[riskId] = rev.afterText
+            }
+        }
+
+        return blocks.map { block in
+            var modifiedBlock = block
+            // 如果有风险已修改，更新 block 文本
+            if let riskIds = block.riskIds {
+                for riskId in riskIds {
+                    if let newText = revisionTextByRiskID[riskId] {
+                        modifiedBlock.text = newText
+                        break
+                    }
+                }
+            }
+            // 如果 block 本身状态为 confirmed，也标记
+            if confirmedStates[block.id] == .confirmed {
+                // block 文本可能已在块级别被修改
+            }
+            return modifiedBlock
         }
     }
 
@@ -947,6 +1008,49 @@ private struct SourceRiskLevelPill: View {
 }
 
 private enum SourceRiskLocator {
+    // MARK: - 后端 blocks 驱动（任务三）
+
+    /// 使用后端 blocks 构建 SourceRiskMap
+    /// - Parameters:
+    ///   - blocks: 后端返回的结构化段落块
+    ///   - risks: 审查结果中的风险列表
+    /// - Returns: 带风险标注的段落映射
+    static func annotate(blocks: [ContractBlock], risks: [RiskItem]) -> SourceRiskMap {
+        // 构建 riskId → RiskItem 的快速查找表
+        let riskById = Dictionary(grouping: risks, by: { $0.id.uuidString })
+            .compactMapValues { $0.first }
+
+        var unmatchedRiskIDs = Set(riskById.keys)
+        var annotatedParagraphs: [AnnotatedSourceParagraph] = []
+
+        for (index, block) in blocks.enumerated() {
+            let blockRiskIds = block.riskIds ?? []
+            var matchedRisks: [RiskItem] = []
+
+            for riskId in blockRiskIds {
+                if let risk = riskById[riskId] {
+                    matchedRisks.append(risk)
+                    unmatchedRiskIDs.remove(riskId)
+                }
+            }
+
+            annotatedParagraphs.append(
+                AnnotatedSourceParagraph(
+                    id: index,
+                    text: block.text,
+                    risks: matchedRisks.sortedForSourceDisplay
+                )
+            )
+        }
+
+        let unmatchedRisks = unmatchedRiskIDs.compactMap { riskById[$0] }
+            .sortedForSourceDisplay
+
+        return SourceRiskMap(paragraphs: annotatedParagraphs, unmatchedRisks: unmatchedRisks)
+    }
+
+    // MARK: - 前端本地分段（回退）
+
     static func annotate(result: ReviewResult, sourceTextOverride: String? = nil) -> SourceRiskMap {
         let text = sourceTextOverride ?? result.sourceText
         let paragraphs = sourceParagraphs(from: text)

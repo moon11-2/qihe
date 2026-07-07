@@ -10,6 +10,7 @@ struct GenerateResultView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var authStore: AuthStore
     @EnvironmentObject private var historyStore: HistoryStore
+    @EnvironmentObject private var revisionStore: RevisionStore
     let recordId: UUID
     @State private var fieldValues: [String: String] = [:]
     @State private var editedParagraphIds: Set<String> = []
@@ -75,6 +76,10 @@ struct GenerateResultView: View {
         .sheet(item: $shareDocument) { document in
             ShareSheet(document: document)
         }
+        .task {
+            // 任务三：视图出现时从后端拉取 revisions 并合并到本地缓存
+            await revisionStore.fetchAndMergeRevisions(recordId: recordId)
+        }
     }
 
     private func contractEditorSheet(_ payload: GenerateHistoryPayload) -> some View {
@@ -105,6 +110,7 @@ struct GenerateResultView: View {
 
                 GeneratedContractEditorView(
                     draft: payload.result.draft ?? "",
+                    preParsedSegments: generateSegments(from: payload),
                     fieldValues: $fieldValues,
                     editedParagraphIds: $editedParagraphIds,
                     scrollToSegmentId: $scrollToSegmentId
@@ -137,6 +143,18 @@ struct GenerateResultView: View {
                     .padding(14)
             }
         }
+    }
+
+    /// 生成合同的段落解析：优先后端 blocks，回退前端分段
+    private func generateSegments(from payload: GenerateHistoryPayload) -> [DocumentSegment]? {
+        guard payload.result.hasBackendBlocks else { return nil }
+        // 任务三：从 RevisionStore 恢复已确认的修改状态
+        let confirmedStates = revisionStore.confirmedBlockStates(for: recordId)
+        return DraftSegmentParser.parseGenerate(
+            blocks: payload.result.blocks,
+            draft: payload.result.draft,
+            revisionStates: confirmedStates
+        )
     }
 
 
@@ -256,6 +274,11 @@ struct GenerateResultView: View {
     }
 
     private func renderedDraft(_ result: GenerateResult) -> String {
+        // 任务三：优先后端 blocks 构建 draft
+        if result.hasBackendBlocks {
+            return renderedDraftFromBlocks(result)
+        }
+
         var draft = result.draft ?? ""
         for field in fieldNames(for: result) {
             guard let value = fieldValues[field]?.nilIfBlank else {
@@ -316,7 +339,12 @@ struct GenerateResultView: View {
 
         do {
             var result = payload.result
-            result.draft = renderedDraft(payload.result)
+            // 任务三：导出时使用修改后的 blocks 文本构建 draft
+            if payload.result.hasBackendBlocks {
+                result.draft = renderedDraftFromBlocks(payload.result)
+            } else {
+                result.draft = renderedDraft(payload.result)
+            }
             let url = try await appState.apiClient.exportGenerateWord(
                 title: result.displayTitle,
                 payload: result
@@ -325,6 +353,35 @@ struct GenerateResultView: View {
         } catch {
             errorMessage = error.qiheDisplayMessage
         }
+    }
+
+    /// 从后端 blocks 构建导出的 draft 文本（任务三）
+    private func renderedDraftFromBlocks(_ result: GenerateResult) -> String {
+        guard let blocks = result.blocks else {
+            return result.draft ?? ""
+        }
+        // 拼接所有 block 文本，并替换占位符的值
+        var fullText = blocks.map { block in
+            if block.kind == .placeholder, let name = block.placeholderName,
+               let filledValue = fieldValues[name]?.nilIfBlank {
+                return filledValue
+            }
+            return block.text
+        }.joined(separator: "\n\n")
+
+        // 兜底：对拼接文本也做一次占位符替换
+        for (name, value) in fieldValues {
+            guard let cleaned = value.nilIfBlank else { continue }
+            let tokens = [
+                "【待补充：\(name)】",
+                "【待补充:\(name)】",
+                "[\(name)]"
+            ]
+            for token in tokens {
+                fullText = fullText.replacingOccurrences(of: token, with: cleaned)
+            }
+        }
+        return fullText
     }
 
     @MainActor

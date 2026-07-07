@@ -4,8 +4,10 @@ import SwiftUI
 
 /// 生成合同编辑器：按段落和占位符展示可编辑的生成结果
 struct GeneratedContractEditorView: View {
-    /// 合同草稿全文
+    /// 合同草稿全文（回退用，当 preParsedSegments 为 nil 时前端本地解析）
     let draft: String
+    /// 预解析的段落数组（任务三：后端 blocks 优先使用，为 nil 时前端本地分段）
+    var preParsedSegments: [DocumentSegment]? = nil
     /// 占位符已填写的值（key: 占位符名称, value: 填写的内容）
     @Binding var fieldValues: [String: String]
     /// 被用户编辑过的段落 ID 集合
@@ -48,9 +50,14 @@ struct GeneratedContractEditorView: View {
             }
         }
         .onAppear {
-            segments = DraftSegmentParser.parse(draft)
+            if let preParsed = preParsedSegments {
+                segments = preParsed
+            } else {
+                segments = DraftSegmentParser.parse(draft)
+            }
         }
         .onChange(of: draft) { _, newDraft in
+            guard preParsedSegments == nil else { return }
             segments = DraftSegmentParser.parse(newDraft)
         }
         // 占位符编辑弹窗

@@ -124,6 +124,45 @@ struct APIClient {
         try await exportWord(type: .generate, title: title, payload: payload)
     }
 
+    // MARK: - Revision 同步（任务三）
+
+    /// 同步修改记录到后端
+    func syncRevision(recordId: UUID, revision: ContractRevision) async throws -> ContractRevision {
+        let request = ContractRevisionSyncRequest(
+            recordId: recordId.uuidString,
+            revisions: [revision]
+        )
+        let response: ContractRevisionSyncResponse = try await send(
+            path: "api/revisions/sync",
+            method: "POST",
+            body: request
+        )
+        return response.revisions.first ?? revision
+    }
+
+    /// 批量同步修改记录到后端
+    func syncRevisions(recordId: UUID, revisions: [ContractRevision]) async throws -> [ContractRevision] {
+        let request = ContractRevisionSyncRequest(
+            recordId: recordId.uuidString,
+            revisions: revisions
+        )
+        let response: ContractRevisionSyncResponse = try await send(
+            path: "api/revisions/sync",
+            method: "POST",
+            body: request
+        )
+        return response.revisions
+    }
+
+    /// 从后端获取某条记录的修改历史
+    func fetchRevisions(recordId: UUID) async throws -> [ContractRevision] {
+        let response: ContractRevisionListResponse = try await send(
+            path: "api/revisions/\(recordId.uuidString)",
+            method: "GET"
+        )
+        return response.revisions
+    }
+
     private func exportWord<Payload: Codable & Hashable>(
         type: ContractMode,
         title: String,
@@ -419,4 +458,14 @@ private extension String {
             .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
         return value.isEmpty ? "qihe-export" : value
     }
+}
+
+// MARK: - Revision API 响应 DTO（任务三）
+
+private struct ContractRevisionSyncResponse: Decodable {
+    let revisions: [ContractRevision]
+}
+
+private struct ContractRevisionListResponse: Decodable {
+    let revisions: [ContractRevision]
 }

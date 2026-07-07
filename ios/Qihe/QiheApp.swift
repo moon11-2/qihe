@@ -14,6 +14,10 @@ struct QiheApp: App {
                 .environmentObject(historyStore)
                 .environmentObject(authStore)
                 .environmentObject(revisionStore)
+                .onAppear {
+                    // 任务三：注入 APIClient 到 RevisionStore 以支持后端同步
+                    revisionStore.apiClient = appState.apiClient
+                }
         }
     }
 }

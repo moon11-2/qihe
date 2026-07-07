@@ -152,4 +152,35 @@ enum DraftSegmentParser {
             )
         }
     }
+
+    // MARK: - 后端 blocks 转换（任务三）
+
+    /// 将后端 ContractBlock 数组转换为前端 DocumentSegment 数组
+    /// - Parameters:
+    ///   - blocks: 后端返回的段落块数组
+    ///   - revisionStates: 已确认的修改状态映射 (blockId → RevisionState)，用于恢复历史状态
+    /// - Returns: 转换后的 DocumentSegment 数组
+    static func parse(blocks: [ContractBlock], revisionStates: [String: RevisionState] = [:]) -> [DocumentSegment] {
+        blocks.map { block in
+            let state = revisionStates[block.id] ?? .original
+            return block.toDocumentSegment(revisionState: state)
+        }
+    }
+
+    /// 生成合同场景的混合解析：优先后端 blocks，无数据时回退前端分段
+    /// - Parameters:
+    ///   - blocks: 后端返回的段落块（可选）
+    ///   - draft: 合同草稿全文（回退用）
+    ///   - revisionStates: 已确认的修改状态映射
+    /// - Returns: DocumentSegment 数组
+    static func parseGenerate(
+        blocks: [ContractBlock]?,
+        draft: String?,
+        revisionStates: [String: RevisionState] = [:]
+    ) -> [DocumentSegment] {
+        if let blocks, !blocks.isEmpty {
+            return parse(blocks: blocks, revisionStates: revisionStates)
+        }
+        return parse(draft ?? "")
+    }
 }

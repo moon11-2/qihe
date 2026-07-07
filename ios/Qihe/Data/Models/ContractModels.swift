@@ -186,6 +186,178 @@ struct ContractSource: Codable, Hashable {
     var originalText: String?
 }
 
+// MARK: - 后端结构化 Block / Revision（任务三）
+
+/// 后端返回的合同段落块类型
+enum ContractBlockKind: String, Codable, Hashable {
+    /// 普通段落
+    case paragraph
+    /// 占位符（生成合同中的【待补充：xxx】）
+    case placeholder
+    /// 标题/章节标题
+    case heading
+}
+
+/// 后端返回的合同段落块
+struct ContractBlock: Codable, Hashable, Identifiable {
+    /// 段落唯一标识符（后端分配）
+    var id: String
+    /// 段落文本内容
+    var text: String
+    /// 段落类型
+    var kind: ContractBlockKind
+    /// 占位符名称（仅 placeholder 类型有效）
+    var placeholderName: String?
+    /// 关联的风险 ID 列表（审查场景）
+    var riskIds: [String]?
+    /// 该段落的整体风险等级（审查场景，取关联风险的最高等级）
+    var riskLevel: RiskLevel?
+    /// 段落原始文本（用于对比和恢复）
+    var originalText: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case text
+        case kind
+        case placeholderName = "placeholder_name"
+        case riskIds = "risk_ids"
+        case riskLevel = "risk_level"
+        case originalText = "original_text"
+    }
+
+    init(
+        id: String,
+        text: String,
+        kind: ContractBlockKind = .paragraph,
+        placeholderName: String? = nil,
+        riskIds: [String]? = nil,
+        riskLevel: RiskLevel? = nil,
+        originalText: String? = nil
+    ) {
+        self.id = id
+        self.text = text
+        self.kind = kind
+        self.placeholderName = placeholderName
+        self.riskIds = riskIds
+        self.riskLevel = riskLevel
+        self.originalText = originalText
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        text = try container.decode(String.self, forKey: .text)
+        kind = try container.decodeIfPresent(ContractBlockKind.self, forKey: .kind) ?? .paragraph
+        placeholderName = try container.decodeIfPresent(String.self, forKey: .placeholderName)
+        riskIds = try container.decodeIfPresent([String].self, forKey: .riskIds)
+        riskLevel = try container.decodeIfPresent(RiskLevel.self, forKey: .riskLevel)
+        originalText = try container.decodeIfPresent(String.self, forKey: .originalText)
+    }
+
+    /// 转换为前端的 DocumentSegment
+    func toDocumentSegment(revisionState: RevisionState = .original) -> DocumentSegment {
+        let kind: DocumentSegment.Kind
+        switch self.kind {
+        case .placeholder:
+            kind = .placeholder(name: placeholderName ?? "未命名")
+        case .paragraph, .heading:
+            kind = .paragraph
+        }
+
+        return DocumentSegment(
+            id: id,
+            kind: kind,
+            text: text,
+            originalText: originalText ?? text,
+            riskIds: riskIds ?? [],
+            revisionState: revisionState
+        )
+    }
+}
+
+/// 后端返回的修改建议
+struct ContractRevision: Codable, Hashable, Identifiable {
+    /// 修改记录唯一标识符
+    var id: String
+    /// 关联的 block ID
+    var blockId: String?
+    /// 关联的风险 ID（审查场景）
+    var riskId: String?
+    /// 修改前的文本
+    var beforeText: String
+    /// 修改后的文本
+    var afterText: String
+    /// 修改状态
+    var status: RevisionState
+    /// 创建时间
+    var createdAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case blockId = "block_id"
+        case riskId = "risk_id"
+        case beforeText = "before_text"
+        case afterText = "after_text"
+        case status
+        case createdAt = "created_at"
+    }
+
+    init(
+        id: String = UUID().uuidString,
+        blockId: String? = nil,
+        riskId: String? = nil,
+        beforeText: String,
+        afterText: String,
+        status: RevisionState = .confirmed,
+        createdAt: Date? = nil
+    ) {
+        self.id = id
+        self.blockId = blockId
+        self.riskId = riskId
+        self.beforeText = beforeText
+        self.afterText = afterText
+        self.status = status
+        self.createdAt = createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        blockId = try container.decodeIfPresent(String.self, forKey: .blockId)
+        riskId = try container.decodeIfPresent(String.self, forKey: .riskId)
+        beforeText = try container.decode(String.self, forKey: .beforeText)
+        afterText = try container.decode(String.self, forKey: .afterText)
+        status = try container.decodeIfPresent(RevisionState.self, forKey: .status) ?? .confirmed
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt)
+    }
+
+    /// 转换为前端的 LocalRevision
+    func toLocalRevision(recordId: UUID) -> LocalRevision {
+        LocalRevision(
+            id: UUID(uuidString: id) ?? UUID(),
+            recordId: recordId,
+            segmentId: blockId ?? riskId ?? id,
+            riskId: riskId,
+            beforeText: beforeText,
+            afterText: afterText,
+            status: status,
+            createdAt: createdAt ?? Date(),
+            updatedAt: createdAt ?? Date()
+        )
+    }
+}
+
+/// 后端 revisions 同步请求 body
+struct ContractRevisionSyncRequest: Codable, Hashable {
+    let recordId: String
+    let revisions: [ContractRevision]
+
+    enum CodingKeys: String, CodingKey {
+        case recordId = "record_id"
+        case revisions
+    }
+}
+
 enum RiskLevel: String, Codable, CaseIterable, Hashable {
     case high
     case medium
@@ -395,6 +567,10 @@ struct ReviewResult: Codable, Hashable {
     var source: ContractSource?
     var clauseReviews: [RiskItem]?
     var parties: JSONValue?
+    /// 后端返回的结构化段落块（任务三：优先使用，为 nil 时回退前端分段）
+    var blocks: [ContractBlock]?
+    /// 后端返回的修改建议列表（任务三）
+    var revisions: [ContractRevision]?
 
     var displayTitle: String {
         title?.nilIfBlank ?? "合同审查报告"
@@ -430,6 +606,8 @@ struct ReviewResult: Codable, Hashable {
         case riskItems
         case riskItemsSnake = "risk_items"
         case parties
+        case blocks
+        case revisions
     }
 
     init(
@@ -441,7 +619,9 @@ struct ReviewResult: Codable, Hashable {
         riskCount: Int? = nil,
         source: ContractSource? = nil,
         clauseReviews: [RiskItem]? = nil,
-        parties: JSONValue? = nil
+        parties: JSONValue? = nil,
+        blocks: [ContractBlock]? = nil,
+        revisions: [ContractRevision]? = nil
     ) {
         self.title = title
         self.summary = summary
@@ -452,6 +632,8 @@ struct ReviewResult: Codable, Hashable {
         self.source = source
         self.clauseReviews = clauseReviews
         self.parties = parties
+        self.blocks = blocks
+        self.revisions = revisions
     }
 
     init(from decoder: Decoder) throws {
@@ -470,6 +652,8 @@ struct ReviewResult: Codable, Hashable {
             .riskItemsSnake
         ])
         parties = try container.decodeIfPresent(JSONValue.self, forKey: .parties)
+        blocks = try container.decodeIfPresent([ContractBlock].self, forKey: .blocks)
+        revisions = try container.decodeIfPresent([ContractRevision].self, forKey: .revisions)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -483,6 +667,8 @@ struct ReviewResult: Codable, Hashable {
         try container.encodeIfPresent(source, forKey: .source)
         try container.encodeIfPresent(clauseReviews, forKey: .clauseReviews)
         try container.encodeIfPresent(parties, forKey: .parties)
+        try container.encodeIfPresent(blocks, forKey: .blocks)
+        try container.encodeIfPresent(revisions, forKey: .revisions)
     }
 }
 
@@ -753,6 +939,8 @@ struct GenerateResult: Codable, Hashable {
     var missingFields: [String]?
     var preSignChecklist: [String]?
     var source: ContractSource?
+    /// 后端返回的结构化段落块（任务三：优先使用，为 nil 时回退前端分段）
+    var blocks: [ContractBlock]?
 
     var displayTitle: String {
         title?.nilIfBlank ?? "合同草案"
@@ -764,6 +952,12 @@ struct GenerateResult: Codable, Hashable {
 
     var checklist: [String] {
         preSignChecklist ?? []
+    }
+
+    /// 是否有后端 blocks 数据可用
+    var hasBackendBlocks: Bool {
+        guard let blocks, !blocks.isEmpty else { return false }
+        return true
     }
 }
 
