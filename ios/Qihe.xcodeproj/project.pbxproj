@@ -31,6 +31,7 @@
 		A0000000000000000000003D /* KeyboardSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000040 /* KeyboardSupport.swift */; };
 		A0000000000000000000003E /* AuthState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000041 /* AuthState.swift */; };
 		A0000000000000000000003F /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000042 /* ProfileView.swift */; };
+		A00000000000000000000044 /* RevisionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000043 /* RevisionStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -60,6 +61,7 @@
 		A00000000000000000000040 /* KeyboardSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/KeyboardSupport.swift; sourceTree = "<group>"; };
 		A00000000000000000000041 /* AuthState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/AuthState.swift; sourceTree = "<group>"; };
 		A00000000000000000000042 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Profile/ProfileView.swift; sourceTree = "<group>"; };
+		A00000000000000000000043 /* RevisionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Data/LocalStore/RevisionStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -100,8 +102,7 @@
 				A00000000000000000000040 /* KeyboardSupport.swift */,
 				A00000000000000000000016 /* RootView.swift */,
 				A00000000000000000000017 /* APIClient.swift */,
-				A00000000000000000000018 /* HistoryStore.swift */,
-				A00000000000000000000019 /* ContractModels.swift */,
+				A00000000000000000000018 /* HistoryStore.swift */,			A00000000000000000000043 /* RevisionStore.swift */,				A00000000000000000000019 /* ContractModels.swift */,
 				A0000000000000000000001A /* QiheColors.swift */,
 				A0000000000000000000001B /* QiheComponents.swift */,
 				A0000000000000000000001C /* QiheTypography.swift */,
@@ -213,6 +214,7 @@
 				A00000000000000000000039 /* ShareSheet.swift in Sources */,
 				A0000000000000000000003B /* SubjectView.swift in Sources */,
 				A0000000000000000000003F /* ProfileView.swift in Sources */,
+				A00000000000000000000044 /* RevisionStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

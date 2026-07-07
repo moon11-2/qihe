@@ -5,12 +5,19 @@ struct ReviewResultView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var authStore: AuthStore
     @EnvironmentObject private var historyStore: HistoryStore
+    @EnvironmentObject private var revisionStore: RevisionStore
     let recordId: UUID
     @State private var selectedTab: ReviewResultTab = .source
     @State private var isExporting = false
     @State private var shareDocument: ShareDocument?
     @State private var errorMessage: String?
     @State private var highlightedRiskID: UUID?
+    @State private var selectedRiskForDetail: RiskItem?
+    @State private var selectedRiskForEdit: RiskItem?
+
+    private var confirmedRiskIDs: Set<String> {
+        revisionStore.confirmedRiskIDs(for: recordId)
+    }
 
     var body: some View {
         ZStack {
@@ -112,6 +119,51 @@ struct ReviewResultView: View {
         .sheet(item: $shareDocument) { document in
             ShareSheet(document: document)
         }
+        .sheet(item: $selectedRiskForDetail) { risk in
+            RiskDetailSheet(
+                risk: risk,
+                isConfirmed: confirmedRiskIDs.contains(risk.id.uuidString),
+                onDismiss: { selectedRiskForDetail = nil },
+                onEdit: {
+                    selectedRiskForDetail = nil
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        selectedRiskForEdit = risk
+                    }
+                }
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
+        .sheet(item: $selectedRiskForEdit) { risk in
+            RiskEditSheet(
+                risk: risk,
+                paragraphText: resolvedParagraphText(for: risk),
+                onDismiss: { selectedRiskForEdit = nil },
+                onConfirm: { beforeText, afterText in
+                    revisionStore.saveRevision(
+                        recordId: recordId,
+                        riskId: risk.id.uuidString,
+                        beforeText: beforeText,
+                        afterText: afterText
+                    )
+                    selectedRiskForEdit = nil
+                }
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
+    }
+
+    private func resolvedParagraphText(for risk: RiskItem) -> String {
+        guard let payload = historyStore.record(id: recordId)?.reviewPayload else {
+            return risk.originalExcerpt ?? risk.originalText ?? ""
+        }
+        let resolvedText = resolveSourceText(from: payload)
+        let sourceMap = SourceRiskLocator.annotate(result: payload.result, sourceTextOverride: resolvedText)
+        if let paragraph = sourceMap.paragraphs.first(where: { $0.risks.contains(where: { $0.id == risk.id }) }) {
+            return paragraph.text
+        }
+        return risk.originalExcerpt ?? risk.originalText ?? ""
     }
 
     private var tabBar: some View {
@@ -149,11 +201,12 @@ struct ReviewResultView: View {
         return OriginalRiskDocumentView(
             sourceMap: sourceMap,
             attachmentFilename: payload.attachment?.filename,
+            confirmedRiskIDs: confirmedRiskIDs,
             onSelectRisk: { risk in
-                focusRisk(risk)
+                selectedRiskForDetail = risk
             },
             onFocusUnlocatedRisk: { risk in
-                focusRisk(risk)
+                selectedRiskForDetail = risk
             }
         )
     }
@@ -640,21 +693,15 @@ struct UnlocatedRiskNotice: View {
 /// - 低风险 → 蓝色（pine）
 /// - 待确认/未评级 → 灰色（navy）
 struct OriginalRiskDocumentView: View {
-    /// 解析后的原文段落与风险映射
     let sourceMap: SourceRiskMap
-    /// 附件文件名（可选，用于副标题展示）
     var attachmentFilename: String?
-    /// 点击风险段落时的回调，传入对应的风险项
+    var confirmedRiskIDs: Set<String> = []
     var onSelectRisk: (RiskItem) -> Void
-    /// 点击未定位风险时的回调
     var onFocusUnlocatedRisk: (RiskItem) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            QiheSectionHeader(
-                title: "原文",
-                subtitle: attachmentFilename
-            )
+            QiheSectionHeader(title: "原文", subtitle: attachmentFilename)
 
             if !sourceMap.unmatchedRisks.isEmpty {
                 UnlocatedRiskNotice(risks: sourceMap.unmatchedRisks) { risk in
@@ -667,14 +714,14 @@ struct OriginalRiskDocumentView: View {
                     let lastParagraphID = sourceMap.paragraphs.last?.id
 
                     ForEach(sourceMap.paragraphs) { paragraph in
-                        SourceParagraphBlock(paragraph: paragraph) { risk in
-                            onSelectRisk(risk)
-                        }
+                        SourceParagraphBlock(
+                            paragraph: paragraph,
+                            isConfirmed: paragraph.risks.contains(where: { confirmedRiskIDs.contains($0.id.uuidString) }),
+                            onSelectRisk: onSelectRisk
+                        )
 
                         if paragraph.id != lastParagraphID {
-                            Divider()
-                                .background(QiheColor.line)
-                                .padding(.vertical, 4)
+                            Divider().background(QiheColor.line).padding(.vertical, 4)
                         }
                     }
                 }
@@ -685,6 +732,7 @@ struct OriginalRiskDocumentView: View {
 
 private struct SourceParagraphBlock: View {
     let paragraph: AnnotatedSourceParagraph
+    var isConfirmed = false
     let onSelectRisk: (RiskItem) -> Void
 
     var body: some View {
@@ -692,9 +740,7 @@ private struct SourceParagraphBlock: View {
             if let primaryRisk = paragraph.primaryRisk {
                 Button {
                     onSelectRisk(primaryRisk)
-                } label: {
-                    content
-                }
+                } label: { content }
                 .buttonStyle(.plain)
                 .accessibilityLabel("有风险段落，\(primaryRisk.riskLevel.label)")
             } else {
@@ -703,17 +749,16 @@ private struct SourceParagraphBlock: View {
         }
     }
 
-    /// 取当前段落最高风险等级用于色块着色
     private var dominantLevel: RiskLevel {
         paragraph.primaryRisk?.riskLevel ?? .pending
     }
 
     private var sideBarColor: Color {
-        sourceRiskColor(for: dominantLevel)
+        isConfirmed ? QiheColor.pine : sourceRiskColor(for: dominantLevel)
     }
 
     private var bgColor: Color {
-        sourceRiskBackgroundColor(for: dominantLevel)
+        isConfirmed ? QiheColor.pineSoft : sourceRiskBackgroundColor(for: dominantLevel)
     }
 
     private var content: some View {
@@ -728,11 +773,21 @@ private struct SourceParagraphBlock: View {
             VStack(alignment: .leading, spacing: 8) {
                 if !paragraph.risks.isEmpty {
                     FlowLayout(spacing: 6) {
-                        ForEach(Array(paragraph.risks.prefix(3))) { risk in
-                            SourceRiskLevelPill(level: risk.riskLevel)
+                        if isConfirmed {
+                            Text("已修改")
+                                .font(QiheFont.caption(size: 10.5, weight: .semibold))
+                                .foregroundStyle(QiheColor.pine)
+                                .padding(.horizontal, 7)
+                                .frame(height: 23)
+                                .background(QiheColor.pineSoft)
+                                .clipShape(Capsule())
+                        } else {
+                            ForEach(Array(paragraph.risks.prefix(3))) { risk in
+                                SourceRiskLevelPill(level: risk.riskLevel)
+                            }
                         }
 
-                        if paragraph.risks.count > 3 {
+                        if paragraph.risks.count > 3 && !isConfirmed {
                             Text("+\(paragraph.risks.count - 3)")
                                 .font(QiheFont.caption(size: 10.5, weight: .semibold))
                                 .foregroundStyle(sideBarColor)
@@ -1552,5 +1607,258 @@ struct FlowLayout: Layout {
     private struct FlowRow {
         let items: [FlowItem]
         let maxY: CGFloat
+    }
+}
+
+// MARK: - 风险详情弹窗
+
+struct RiskDetailSheet: View {
+    let risk: RiskItem
+    let isConfirmed: Bool
+    let onDismiss: () -> Void
+    let onEdit: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(alignment: .top, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(risk.displayTitle)
+                                .font(QiheFont.title(size: 18))
+                                .foregroundStyle(QiheColor.ink)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            if isConfirmed {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.system(size: 13, weight: .semibold))
+                                    Text("已修改")
+                                        .font(QiheFont.caption(size: 12, weight: .semibold))
+                                }
+                                .foregroundStyle(QiheColor.pine)
+                            }
+                        }
+
+                        Spacer(minLength: 8)
+
+                        Text(risk.riskLevel.label)
+                            .font(QiheFont.caption(size: 11, weight: .semibold))
+                            .foregroundStyle(risk.riskLevel.foreground)
+                            .padding(.horizontal, 8)
+                            .frame(height: 26)
+                            .background(risk.riskLevel.background)
+                            .clipShape(Capsule())
+                    }
+
+                    Divider().background(QiheColor.line)
+
+                    if let analysis = risk.displayAnalysis {
+                        detailSection(title: "风险分析", icon: "magnifyingglass", content: analysis)
+                    }
+
+                    if let suggestion = risk.displaySuggestion {
+                        detailSection(title: "修改建议", icon: "lightbulb", content: suggestion)
+                    }
+
+                    if let replacement = risk.suggestedReplacement?.nilIfBlank {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("建议替换条款", systemImage: "arrow.triangle.swap")
+                                .font(QiheFont.caption(size: 12, weight: .semibold))
+                                .foregroundStyle(QiheColor.seal)
+
+                            Text(replacement)
+                                .font(QiheFont.body(size: 14))
+                                .foregroundStyle(QiheColor.inkSoft)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(QiheColor.sealSoft.opacity(0.5))
+                                .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
+                        }
+                    }
+
+                    if let legalBasis = risk.displayLegalBasis {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "text.book.closed")
+                                .font(.system(size: 14, weight: .medium))
+                                .padding(.top, 1)
+                            Text("法条依据：\(legalBasis)")
+                                .font(QiheFont.caption(size: 12))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .foregroundStyle(QiheColor.navy)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(QiheColor.navySoft)
+                        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
+                    }
+                }
+                .padding(20)
+            }
+            .background(QiheColor.paper)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("关闭") { onDismiss() }
+                        .foregroundStyle(QiheColor.navy)
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        onEdit()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "square.and.pencil")
+                            Text("修改")
+                        }
+                        .font(QiheFont.body(size: 14, weight: .semibold))
+                        .foregroundStyle(QiheColor.pine)
+                    }
+                }
+            }
+        }
+    }
+
+    private func detailSection(title: String, icon: String, content: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(title, systemImage: icon)
+                .font(QiheFont.caption(size: 12, weight: .semibold))
+                .foregroundStyle(QiheColor.muted)
+            Text(content)
+                .font(QiheFont.body(size: 14))
+                .foregroundStyle(QiheColor.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
+                .lineSpacing(4)
+        }
+    }
+}
+
+// MARK: - 风险编辑弹窗
+
+/// 默认填入优先级：suggestedReplacement → revisionSuggestion → paragraphText
+struct RiskEditSheet: View {
+    let risk: RiskItem
+    let paragraphText: String
+    let onDismiss: () -> Void
+    let onConfirm: (_ beforeText: String, _ afterText: String) -> Void
+
+    @State private var editedText: String
+    @FocusState private var isTextEditorFocused: Bool
+
+    private var beforeText: String {
+        risk.originalExcerpt?.nilIfBlank
+            ?? risk.originalText?.nilIfBlank
+            ?? paragraphText
+    }
+
+    init(
+        risk: RiskItem,
+        paragraphText: String,
+        onDismiss: @escaping () -> Void,
+        onConfirm: @escaping (_ beforeText: String, _ afterText: String) -> Void
+    ) {
+        self.risk = risk
+        self.paragraphText = paragraphText
+        self.onDismiss = onDismiss
+        self.onConfirm = onConfirm
+
+        let defaultText = risk.suggestedReplacement?.nilIfBlank
+            ?? risk.revisionSuggestion?.nilIfBlank
+            ?? risk.suggestion?.nilIfBlank
+            ?? paragraphText
+        _editedText = State(initialValue: defaultText)
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text(risk.displayTitle)
+                            .font(QiheFont.title(size: 16))
+                            .foregroundStyle(QiheColor.ink)
+                        Spacer()
+                        Text(risk.riskLevel.label)
+                            .font(QiheFont.caption(size: 11, weight: .semibold))
+                            .foregroundStyle(risk.riskLevel.foreground)
+                            .padding(.horizontal, 7)
+                            .frame(height: 24)
+                            .background(risk.riskLevel.background)
+                            .clipShape(Capsule())
+                    }
+                    Text("修改后将替换原文对应段落")
+                        .font(QiheFont.caption(size: 11.5))
+                        .foregroundStyle(QiheColor.muted)
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+                .padding(.bottom, 12)
+
+                Divider().background(QiheColor.line)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("原文")
+                        .font(QiheFont.caption(size: 11, weight: .semibold))
+                        .foregroundStyle(QiheColor.muted)
+                        .padding(.horizontal, 20)
+
+                    Text(beforeText)
+                        .font(QiheFont.body(size: 13))
+                        .foregroundStyle(QiheColor.inkSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(QiheColor.card.opacity(0.6))
+                        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
+                        .padding(.horizontal, 20)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("修改后")
+                        .font(QiheFont.caption(size: 11, weight: .semibold))
+                        .foregroundStyle(QiheColor.pine)
+                        .padding(.horizontal, 20)
+
+                    TextEditor(text: $editedText)
+                        .font(QiheFont.body(size: 14))
+                        .focused($isTextEditorFocused)
+                        .scrollContentBackground(.hidden)
+                        .padding(10)
+                        .frame(minHeight: 180)
+                        .background(QiheColor.card)
+                        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous)
+                                .stroke(QiheColor.pine.opacity(0.3), lineWidth: 1.5)
+                        )
+                        .padding(.horizontal, 20)
+                }
+                .padding(.top, 16)
+
+                Spacer(minLength: 0)
+            }
+            .background(QiheColor.paper)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { onDismiss() }
+                        .foregroundStyle(QiheColor.navy)
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        let trimmed = editedText.trimmedForInput
+                        guard !trimmed.isEmpty else { return }
+                        onConfirm(beforeText, trimmed)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark")
+                            Text("确认修改")
+                        }
+                        .font(QiheFont.body(size: 14, weight: .semibold))
+                        .foregroundStyle(QiheColor.pine)
+                    }
+                    .disabled(editedText.trimmedForInput.isEmpty)
+                }
+            }
+            .onAppear { isTextEditorFocused = true }
+        }
     }
 }
