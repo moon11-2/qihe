@@ -6,7 +6,7 @@ struct ReviewResultView: View {
     @EnvironmentObject private var authStore: AuthStore
     @EnvironmentObject private var historyStore: HistoryStore
     let recordId: UUID
-    @State private var selectedTab: ReviewResultTab = .risks
+    @State private var selectedTab: ReviewResultTab = .source
     @State private var isExporting = false
     @State private var shareDocument: ShareDocument?
     @State private var errorMessage: String?
@@ -43,6 +43,30 @@ struct ReviewResultView: View {
                             }
                             .padding(20)
                         }
+                        .gesture(
+                            DragGesture(minimumDistance: 40, coordinateSpace: .local)
+                                .onEnded { value in
+                                    let horizontalAmount = value.translation.width
+                                    let verticalAmount = abs(value.translation.height)
+
+                                    // 仅在水平滑动明显大于垂直滑动时触发
+                                    guard abs(horizontalAmount) > verticalAmount * 1.2 else {
+                                        return
+                                    }
+
+                                    if horizontalAmount > 0 && selectedTab == .source {
+                                        // 右滑：从原文切到风险列表
+                                        withAnimation(.easeInOut(duration: 0.22)) {
+                                            selectedTab = .risks
+                                        }
+                                    } else if horizontalAmount < 0 && selectedTab == .risks {
+                                        // 左滑：从风险列表切回原文
+                                        withAnimation(.easeInOut(duration: 0.22)) {
+                                            selectedTab = .source
+                                        }
+                                    }
+                                }
+                        )
                         .onChange(of: highlightedRiskID) { _, _ in
                             scrollToHighlightedRisk(in: proxy)
                         }
@@ -119,34 +143,44 @@ struct ReviewResultView: View {
     }
 
     private func sourceTab(_ payload: ReviewHistoryPayload) -> some View {
-        let sourceMap = SourceRiskLocator.annotate(result: payload.result)
-        let lastParagraphID = sourceMap.paragraphs.last?.id
+        let resolvedText = resolveSourceText(from: payload)
+        let sourceMap = SourceRiskLocator.annotate(result: payload.result, sourceTextOverride: resolvedText)
 
-        return VStack(alignment: .leading, spacing: 10) {
-            QiheSectionHeader(title: "原文", subtitle: payload.attachment?.filename)
-
-            if !sourceMap.unmatchedRisks.isEmpty {
-                UnlocatedRiskNotice(risks: sourceMap.unmatchedRisks) { risk in
-                    focusRisk(risk)
-                }
+        return OriginalRiskDocumentView(
+            sourceMap: sourceMap,
+            attachmentFilename: payload.attachment?.filename,
+            onSelectRisk: { risk in
+                focusRisk(risk)
+            },
+            onFocusUnlocatedRisk: { risk in
+                focusRisk(risk)
             }
+        )
+    }
 
-            PaperCard(padding: 12) {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(sourceMap.paragraphs) { paragraph in
-                        SourceParagraphBlock(paragraph: paragraph) { risk in
-                            focusRisk(risk)
-                        }
-
-                        if paragraph.id != lastParagraphID {
-                            Divider()
-                                .background(QiheColor.line)
-                                .padding(.vertical, 4)
-                        }
-                    }
-                }
-            }
+    /// 按优先级解析合同原文来源
+    ///
+    /// 优先级：
+    /// 1. result.source.originalText（后端完整原文）
+    /// 2. payload.requestText（用户提交审查时的文本）
+    /// 3. result.source.textPreview（后端文本预览，通常截断到240字）
+    /// 4. risk.originalExcerpt 拼接（从各风险项原文摘录拼凑）
+    /// 5. result.summary（仅使用结果摘要）
+    private func resolveSourceText(from payload: ReviewHistoryPayload) -> String {
+        if let text = payload.result.source?.originalText?.nilIfBlank {
+            return text
         }
+        if let text = payload.requestText.nilIfBlank {
+            return text
+        }
+        if let text = payload.result.source?.textPreview?.nilIfBlank {
+            return text
+        }
+        let excerpts = payload.result.risks.compactMap { $0.originalExcerpt?.nilIfBlank }
+        if !excerpts.isEmpty {
+            return excerpts.joined(separator: "\n")
+        }
+        return payload.result.summary?.nilIfBlank ?? "暂无原文。"
     }
 
     private func riskTab(_ result: ReviewResult) -> some View {
@@ -500,7 +534,7 @@ private struct ReviewStatCell: View {
     }
 }
 
-private struct SourceRiskMap {
+struct SourceRiskMap {
     let paragraphs: [AnnotatedSourceParagraph]
     let unmatchedRisks: [RiskItem]
 }
@@ -521,7 +555,7 @@ private struct SourceTextParagraph {
     }
 }
 
-private struct AnnotatedSourceParagraph: Identifiable {
+struct AnnotatedSourceParagraph: Identifiable {
     let id: Int
     let text: String
     let risks: [RiskItem]
@@ -531,7 +565,7 @@ private struct AnnotatedSourceParagraph: Identifiable {
     }
 }
 
-private struct UnlocatedRiskNotice: View {
+struct UnlocatedRiskNotice: View {
     let risks: [RiskItem]
     let onSelectRisk: (RiskItem) -> Void
 
@@ -596,6 +630,59 @@ private struct UnlocatedRiskNotice: View {
     }
 }
 
+// MARK: - 原文风险文档视图
+
+/// 原文风险文档视图：以段落形式展示合同原文，并为有风险的段落标记彩色风险色块。
+///
+/// 颜色规则：
+/// - 高风险 → 红色（seal）
+/// - 中风险 → 橙色（amber）
+/// - 低风险 → 蓝色（pine）
+/// - 待确认/未评级 → 灰色（navy）
+struct OriginalRiskDocumentView: View {
+    /// 解析后的原文段落与风险映射
+    let sourceMap: SourceRiskMap
+    /// 附件文件名（可选，用于副标题展示）
+    var attachmentFilename: String?
+    /// 点击风险段落时的回调，传入对应的风险项
+    var onSelectRisk: (RiskItem) -> Void
+    /// 点击未定位风险时的回调
+    var onFocusUnlocatedRisk: (RiskItem) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            QiheSectionHeader(
+                title: "原文",
+                subtitle: attachmentFilename
+            )
+
+            if !sourceMap.unmatchedRisks.isEmpty {
+                UnlocatedRiskNotice(risks: sourceMap.unmatchedRisks) { risk in
+                    onFocusUnlocatedRisk(risk)
+                }
+            }
+
+            PaperCard(padding: 12) {
+                VStack(alignment: .leading, spacing: 0) {
+                    let lastParagraphID = sourceMap.paragraphs.last?.id
+
+                    ForEach(sourceMap.paragraphs) { paragraph in
+                        SourceParagraphBlock(paragraph: paragraph) { risk in
+                            onSelectRisk(risk)
+                        }
+
+                        if paragraph.id != lastParagraphID {
+                            Divider()
+                                .background(QiheColor.line)
+                                .padding(.vertical, 4)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 private struct SourceParagraphBlock: View {
     let paragraph: AnnotatedSourceParagraph
     let onSelectRisk: (RiskItem) -> Void
@@ -616,11 +703,24 @@ private struct SourceParagraphBlock: View {
         }
     }
 
+    /// 取当前段落最高风险等级用于色块着色
+    private var dominantLevel: RiskLevel {
+        paragraph.primaryRisk?.riskLevel ?? .pending
+    }
+
+    private var sideBarColor: Color {
+        sourceRiskColor(for: dominantLevel)
+    }
+
+    private var bgColor: Color {
+        sourceRiskBackgroundColor(for: dominantLevel)
+    }
+
     private var content: some View {
         HStack(alignment: .top, spacing: 10) {
             if paragraph.primaryRisk != nil {
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(QiheColor.navy)
+                    .fill(sideBarColor)
                     .frame(width: 3.5)
                     .padding(.vertical, 2)
             }
@@ -635,7 +735,7 @@ private struct SourceParagraphBlock: View {
                         if paragraph.risks.count > 3 {
                             Text("+\(paragraph.risks.count - 3)")
                                 .font(QiheFont.caption(size: 10.5, weight: .semibold))
-                                .foregroundStyle(QiheColor.navy)
+                                .foregroundStyle(sideBarColor)
                                 .padding(.horizontal, 7)
                                 .frame(height: 23)
                                 .background(QiheColor.card.opacity(0.82))
@@ -653,12 +753,40 @@ private struct SourceParagraphBlock: View {
         .padding(.horizontal, paragraph.primaryRisk == nil ? 0 : 12)
         .padding(.vertical, paragraph.primaryRisk == nil ? 8 : 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(paragraph.primaryRisk == nil ? Color.clear : QiheColor.navySoft.opacity(0.74))
+        .background(paragraph.primaryRisk == nil ? Color.clear : bgColor.opacity(0.74))
         .clipShape(RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous)
-                .stroke(paragraph.primaryRisk == nil ? Color.clear : QiheColor.navy.opacity(0.18), lineWidth: 1)
+                .stroke(paragraph.primaryRisk == nil ? Color.clear : sideBarColor.opacity(0.18), lineWidth: 1)
         )
+    }
+}
+
+/// 风险等级 → 原文段落侧边栏/背景色
+private func sourceRiskColor(for level: RiskLevel) -> Color {
+    switch level {
+    case .high:
+        return QiheColor.seal
+    case .medium:
+        return QiheColor.amber
+    case .low:
+        return QiheColor.pine
+    case .pending, .unknown:
+        return QiheColor.navy
+    }
+}
+
+/// 风险等级 → 原文段落背景色（浅色版）
+private func sourceRiskBackgroundColor(for level: RiskLevel) -> Color {
+    switch level {
+    case .high:
+        return QiheColor.sealSoft
+    case .medium:
+        return QiheColor.amberSoft
+    case .low:
+        return QiheColor.pineSoft
+    case .pending, .unknown:
+        return QiheColor.navySoft
     }
 }
 
@@ -668,17 +796,18 @@ private struct SourceRiskLevelPill: View {
     var body: some View {
         Text(level.label)
             .font(QiheFont.caption(size: 10.5, weight: .semibold))
-            .foregroundStyle(level.foreground)
+            .foregroundStyle(sourceRiskColor(for: level))
             .padding(.horizontal, 7)
             .frame(height: 23)
-            .background(level.background)
+            .background(sourceRiskBackgroundColor(for: level))
             .clipShape(Capsule())
     }
 }
 
 private enum SourceRiskLocator {
-    static func annotate(result: ReviewResult) -> SourceRiskMap {
-        let paragraphs = sourceParagraphs(from: result.sourceText)
+    static func annotate(result: ReviewResult, sourceTextOverride: String? = nil) -> SourceRiskMap {
+        let text = sourceTextOverride ?? result.sourceText
+        let paragraphs = sourceParagraphs(from: text)
         var risksByParagraph: [Int: [RiskItem]] = [:]
         var unmatchedRisks: [RiskItem] = []
 
