@@ -89,6 +89,40 @@ struct JobCreatedResponse: Decodable {
     enum CodingKeys: String, CodingKey { case jobId = "job_id" }
 }
 
+// MARK: - 积分权益 DTO（任务六）
+
+/// 用户积分余额
+struct CreditBalance: Codable, Hashable, Sendable {
+    var credits: Int
+    var plan: String?
+
+    var isLow: Bool { credits < 2 }
+}
+
+/// 激活码兑换请求
+struct ActivationCodeRequest: Codable, Hashable {
+    let code: String
+}
+
+/// 激活码兑换响应
+struct ActivationCodeResponse: Codable, Hashable {
+    let success: Bool
+    let message: String?
+    let credits: Int?
+
+    var displayMessage: String {
+        message ?? (success ? "兑换成功，积分已到账。" : "兑换失败，请检查激活码。")
+    }
+}
+
+/// StoreKit 产品信息
+struct CreditProduct: Codable, Hashable, Identifiable {
+    var id: String
+    var name: String
+    var credits: Int
+    var price: String
+}
+
 // MARK: - 历史记录类型
 
 enum HistoryKind: String, Codable, CaseIterable, Hashable {

@@ -195,6 +195,27 @@ struct APIClient {
         )
     }
 
+    // MARK: - 积分 / 激活码（任务六）
+
+    /// 获取当前用户积分余额
+    func getBalance() async throws -> CreditBalance {
+        try await send(path: "api/credits/balance", method: "GET")
+    }
+
+    /// 激活码兑换
+    func redeemCode(code: String) async throws -> ActivationCodeResponse {
+        try await send(
+            path: "api/credits/redeem",
+            method: "POST",
+            body: ActivationCodeRequest(code: code)
+        )
+    }
+
+    /// 获取 StoreKit 产品列表（预留）
+    func getStoreProducts() async throws -> [CreditProduct] {
+        try await send(path: "api/credits/products", method: "GET")
+    }
+
     // MARK: - Revision 同步（任务三）
 
     /// 同步修改记录到后端

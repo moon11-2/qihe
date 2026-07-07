@@ -2,10 +2,18 @@ import SwiftUI
 
 struct ProfileView: View {
     @EnvironmentObject private var authStore: AuthStore
+    @EnvironmentObject private var appState: AppState
     @State private var emailOrPhone = ""
     @State private var password = ""
     @State private var displayName = ""
     @FocusState private var focusedField: ProfileField?
+
+    /// 任务六：积分余额、激活码
+    @State private var creditBalance: CreditBalance?
+    @State private var activationCode = ""
+    @State private var isRedeeming = false
+    @State private var redeemMessage: String?
+    @State private var showStorePaywall = false
 
     var body: some View {
         ZStack {
@@ -84,6 +92,36 @@ struct ProfileView: View {
                 Spacer(minLength: 8)
             }
 
+            // 任务六：积分余额卡片
+            creditBalanceCard
+
+            // 任务六：激活码兑换
+            activationCodeSection
+
+            // 任务六：购买积分入口
+            if showStorePaywall {
+                storePaywallSection
+            } else {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.22)) { showStorePaywall = true }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "cart")
+                            .font(.system(size: 14))
+                        Text("购买积分")
+                            .font(QiheFont.body(size: 14))
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .foregroundStyle(QiheColor.navy)
+                    .padding(14)
+                    .background(QiheColor.navySoft.opacity(0.5))
+                    .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+
             if let message = authStore.message {
                 statusMessage(message)
             }
@@ -91,6 +129,185 @@ struct ProfileView: View {
             QiheSecondaryButton(title: "退出登录", systemImage: "rectangle.portrait.and.arrow.right") {
                 authStore.signOut()
             }
+        }
+    }
+
+    // MARK: - 积分余额（任务六）
+
+    private var creditBalanceCard: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill((creditBalance?.isLow ?? true) ? QiheColor.amberSoft : QiheColor.pineSoft)
+                    .frame(width: 44, height: 44)
+                Image(systemName: "bolt.shield")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle((creditBalance?.isLow ?? true) ? QiheColor.amber : QiheColor.pine)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("可用积分")
+                    .font(QiheFont.caption(size: 12))
+                    .foregroundStyle(QiheColor.muted)
+                Text("\(creditBalance?.credits ?? 0)")
+                    .font(QiheFont.title(size: 24))
+                    .foregroundStyle((creditBalance?.isLow ?? true) ? QiheColor.amber : QiheColor.ink)
+                    .contentTransition(.numericText())
+            }
+
+            Spacer()
+
+            if let plan = creditBalance?.plan?.nilIfBlank {
+                QiheStatusPill(text: plan, color: QiheColor.navy, background: QiheColor.navySoft)
+            }
+        }
+        .padding(14)
+        .background(QiheColor.card)
+        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous)
+                .stroke(QiheColor.line, lineWidth: 1)
+        )
+        .onAppear { Task { await fetchCredits() } }
+    }
+
+    // MARK: - 激活码兑换（任务六）
+
+    private var activationCodeSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("激活码兑换")
+                .font(QiheFont.body(size: 14, weight: .semibold))
+                .foregroundStyle(QiheColor.ink)
+
+            HStack(spacing: 10) {
+                TextField("输入激活码", text: $activationCode)
+                    .font(QiheFont.body(size: 14))
+                    .foregroundStyle(QiheColor.ink)
+                    .autocapitalization(.allCharacters)
+                    .autocorrectionDisabled()
+                    .padding(.horizontal, 12)
+                    .frame(height: 44)
+                    .background(QiheColor.paper)
+                    .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous)
+                            .stroke(QiheColor.line, lineWidth: 1)
+                    )
+
+                Button {
+                    QiheKeyboard.dismiss()
+                    Task { await redeemCode() }
+                } label: {
+                    Group {
+                        if isRedeeming {
+                            ProgressView().tint(.white).scaleEffect(0.8)
+                        } else {
+                            Text("兑换")
+                                .font(QiheFont.body(size: 14, weight: .semibold))
+                        }
+                    }
+                    .foregroundStyle(.white)
+                    .frame(height: 44)
+                    .padding(.horizontal, 20)
+                    .background(
+                        activationCode.trimmedForInput.isEmpty || isRedeeming
+                            ? QiheColor.muted : QiheColor.navy
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
+                }
+                .disabled(activationCode.trimmedForInput.isEmpty || isRedeeming)
+            }
+
+            if let redeemMessage {
+                Text(redeemMessage)
+                    .font(QiheFont.caption(size: 12))
+                    .foregroundStyle(redeemMessage.contains("成功") ? QiheColor.pine : QiheColor.seal)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        redeemMessage.contains("成功") ? QiheColor.pineSoft : QiheColor.sealSoft
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
+            }
+        }
+    }
+
+    // MARK: - StoreKit 购买积分（任务六，预留）
+
+    private var storePaywallSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("购买积分")
+                    .font(QiheFont.body(size: 14, weight: .semibold))
+                    .foregroundStyle(QiheColor.ink)
+                Spacer()
+                Button {
+                    withAnimation(.easeInOut(duration: 0.22)) { showStorePaywall = false }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(QiheColor.muted)
+                }
+            }
+
+            // 预留产品卡片
+            ForEach([("20 积分", "¥6.00"), ("60 积分", "¥12.00"), ("150 积分", "¥28.00")], id: \.0) { name, price in
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(name).font(QiheFont.body(size: 14, weight: .semibold)).foregroundStyle(QiheColor.ink)
+                        Text("一次性购买").font(QiheFont.caption(size: 11)).foregroundStyle(QiheColor.muted)
+                    }
+                    Spacer()
+                    Text(price)
+                        .font(QiheFont.body(size: 16, weight: .bold))
+                        .foregroundStyle(QiheColor.navy)
+                        .padding(.horizontal, 14)
+                        .frame(height: 36)
+                        .background(QiheColor.navySoft)
+                        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
+                }
+                .padding(12)
+                .background(QiheColor.card)
+                .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous)
+                        .stroke(QiheColor.line, lineWidth: 1)
+                )
+            }
+
+            Text("后续将接入 StoreKit 内购，当前为占位示意。")
+                .font(QiheFont.caption(size: 11))
+                .foregroundStyle(QiheColor.muted)
+        }
+    }
+
+    // MARK: - 积分方法（任务六）
+
+    private func fetchCredits() async {
+        guard authStore.status.isSignedIn else { return }
+        do {
+            creditBalance = try await appState.apiClient.getBalance()
+        } catch {
+            // 静默失败
+        }
+    }
+
+    private func redeemCode() async {
+        let code = activationCode.trimmedForInput
+        guard !code.isEmpty else { return }
+        isRedeeming = true
+        redeemMessage = nil
+        defer { isRedeeming = false }
+
+        do {
+            let response = try await appState.apiClient.redeemCode(code: code)
+            redeemMessage = response.displayMessage
+            if response.success {
+                activationCode = ""
+                await fetchCredits()
+            }
+        } catch {
+            redeemMessage = error.qiheDisplayMessage
         }
     }
 

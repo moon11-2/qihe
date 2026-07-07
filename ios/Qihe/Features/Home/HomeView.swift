@@ -12,6 +12,11 @@ struct HomeView: View {
     @State private var uploadError: String?
     @FocusState private var isPromptFocused: Bool
 
+    /// 任务六：积分余额与不足引导
+    @State private var creditBalance: CreditBalance?
+    @State private var showInsufficientCreditsAlert = false
+    @State private var insufficientAction: String = ""
+
     var body: some View {
         ZStack {
             QiheColor.paper.ignoresSafeArea()
@@ -39,15 +44,25 @@ struct HomeView: View {
         .qiheInlineNavigationTitle()
         .task {
             await checkHealth()
+            await fetchCredits()
         }
         .refreshable {
             await checkHealth()
+            await fetchCredits()
         }
         .fileImporter(
             isPresented: $isFileImporterPresented,
             allowedContentTypes: QiheDocumentValidator.allowedTypes
         ) { result in
             handleFileImport(result)
+        }
+        .alert("积分不足", isPresented: $showInsufficientCreditsAlert) {
+            Button("去兑换") {
+                appState.selectedTab = .profile
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("\(insufficientAction)需要消耗积分，当前积分不足。\n可前往「我的」页面兑换激活码或购买积分。")
         }
     }
 
@@ -147,46 +162,52 @@ struct HomeView: View {
 
                 HStack(spacing: 12) {
                     Button {
-                        guard requireSignIn() else {
-                            return
-                        }
+                        guard requireSignIn() else { return }
+                        guard requireCredits(2, action: "审查合同") else { return }
                         isPromptFocused = false
                         QiheKeyboard.dismiss()
                         appState.path.append(.review(prefill: nil))
                     } label: {
-                        Text("合同审查")
-                            .font(QiheFont.body(size: 15, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.82)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 42)
-                            .background(QiheColor.navy)
-                            .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
+                        VStack(spacing: 3) {
+                            Text("合同审查")
+                                .font(QiheFont.body(size: 15, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+                            Text("消耗 2 积分")
+                                .font(QiheFont.caption(size: 10))
+                                .foregroundStyle(.white.opacity(0.65))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 42)
+                        .background(QiheColor.navy)
+                        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
                     }
                     .buttonStyle(.plain)
 
                     Button {
-                        guard requireSignIn() else {
-                            return
-                        }
+                        guard requireSignIn() else { return }
+                        guard requireCredits(3, action: "生成合同") else { return }
                         isPromptFocused = false
                         QiheKeyboard.dismiss()
                         appState.path.append(.generate(prefill: nil))
                     } label: {
-                        Text("合同生成")
-                            .font(QiheFont.body(size: 15, weight: .semibold))
-                            .foregroundStyle(QiheColor.ink)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.82)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 42)
-                            .background(QiheColor.paper)
-                            .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous)
-                                    .stroke(QiheColor.lineStrong, lineWidth: 1)
-                            )
+                        VStack(spacing: 3) {
+                            Text("合同生成")
+                                .font(QiheFont.body(size: 15, weight: .semibold))
+                                .foregroundStyle(QiheColor.ink)
+                                .lineLimit(1)
+                            Text("消耗 3 积分")
+                                .font(QiheFont.caption(size: 10))
+                                .foregroundStyle(QiheColor.muted)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 42)
+                        .background(QiheColor.paper)
+                        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous)
+                                .stroke(QiheColor.lineStrong, lineWidth: 1)
+                        )
                     }
                     .buttonStyle(.plain)
                 }
@@ -402,6 +423,31 @@ struct HomeView: View {
         } catch {
             healthState = .offline(message: error.qiheDisplayMessage)
         }
+    }
+
+    // MARK: - 积分（任务六）
+
+    private func fetchCredits() async {
+        guard authStore.status.isSignedIn else { return }
+        do {
+            creditBalance = try await appState.apiClient.getBalance()
+        } catch {
+            // 静默失败，不阻塞主流程
+        }
+    }
+
+    /// 检查积分是否足够，不足时弹 alert 并返回 false
+    private func requireCredits(_ needed: Int, action: String) -> Bool {
+        guard let balance = creditBalance else {
+            // 尚未加载余额，放行（后端会在请求时返回 402）
+            return true
+        }
+        guard balance.credits >= needed else {
+            insufficientAction = action
+            showInsufficientCreditsAlert = true
+            return false
+        }
+        return true
     }
 }
 
