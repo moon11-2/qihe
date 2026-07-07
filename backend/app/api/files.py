@@ -1,14 +1,24 @@
 from pathlib import Path
+import time
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, UploadFile
+from starlette.responses import PlainTextResponse
 
 from app.api.deps import require_current_user
 from app.core.config import settings
 from app.core.errors import api_error
+from app.models.auth import AuthUser
 from app.models.files import FileUploadResponse
 from app.services.files.extractor import SUPPORTED_SUFFIXES, TextExtractionError, extract_text
-from app.services.files.storage import StoredFile, save_metadata, upload_path
+from app.services.files.storage import (
+    StoredFile,
+    load_extracted_text,
+    load_metadata,
+    save_extracted_text,
+    save_metadata,
+    upload_path,
+)
 
 router = APIRouter(prefix="/api/files", tags=["files"], dependencies=[Depends(require_current_user)])
 
@@ -17,7 +27,10 @@ MAX_CHUNK_SIZE = 1024 * 1024
 
 
 @router.post("/upload", response_model=FileUploadResponse)
-async def upload_file(file: UploadFile = File(...)) -> FileUploadResponse:
+async def upload_file(
+    file: UploadFile = File(...),
+    user: AuthUser = Depends(require_current_user),
+) -> FileUploadResponse:
     filename = file.filename or "untitled"
     suffix = Path(filename).suffix.lower()
     content_type = file.content_type
@@ -61,8 +74,12 @@ async def upload_file(file: UploadFile = File(...)) -> FileUploadResponse:
             path=str(destination),
             char_count=len(text),
             text_preview=preview,
+            owner_user_id=user.id,
+            created_at=_now_iso(),
+            expires_at=_expires_at(days=90),
         )
         save_metadata(stored_file)
+        save_extracted_text(file_id, text)
     finally:
         await file.close()
 
@@ -74,3 +91,29 @@ async def upload_file(file: UploadFile = File(...)) -> FileUploadResponse:
         text_preview=preview,
         char_count=len(text),
     )
+
+
+@router.get("/{file_id}/text")
+async def get_file_text(
+    file_id: str,
+    user: AuthUser = Depends(require_current_user),
+) -> PlainTextResponse:
+    """Get the full extracted text for an uploaded file."""
+    metadata = load_metadata(file_id)
+    if metadata is None:
+        raise api_error(404, "file_not_found", "文件不存在")
+    if metadata.owner_user_id is not None and metadata.owner_user_id != user.id:
+        raise api_error(403, "forbidden", "无权访问该文件")
+
+    text = load_extracted_text(file_id)
+    if text is None:
+        raise api_error(404, "text_not_found", "文件文本不存在")
+    return PlainTextResponse(content=text, media_type="text/plain; charset=utf-8")
+
+
+def _now_iso() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _expires_at(days: int) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + days * 86400))

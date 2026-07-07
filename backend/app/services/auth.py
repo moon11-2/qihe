@@ -5,11 +5,11 @@ import json
 import secrets
 import sqlite3
 import time
-from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
 from app.models.auth import AuthUser, LoginRequest, RegisterRequest
+from app.services.db import connect, init_schema
 
 TOKEN_ALGORITHM = "HS256"
 TOKEN_TYPE = "JWT"
@@ -27,11 +27,11 @@ class AuthError(Exception):
 
 def register_user(request: RegisterRequest) -> tuple[AuthUser, str, int]:
     _jwt_secret()
-    _init_db()
+    init_schema()
     now = _now_iso()
     password_hash = _hash_password(request.password)
     try:
-        with _connect() as conn:
+        with connect() as conn:
             cursor = conn.execute(
                 "INSERT INTO users (email, display_name, password_hash, created_at) VALUES (?, ?, ?, ?)",
                 (request.email, request.display_name, password_hash, now),
@@ -51,7 +51,7 @@ def register_user(request: RegisterRequest) -> tuple[AuthUser, str, int]:
 
 def authenticate_user(request: LoginRequest) -> tuple[AuthUser, str, int]:
     _jwt_secret()
-    _init_db()
+    init_schema()
     row = _get_user_row_by_email(request.email)
     if row is None or not _verify_password(request.password, str(row["password_hash"])):
         raise AuthError("invalid_credentials", "邮箱或密码不正确", status_code=401)
@@ -67,7 +67,7 @@ def get_user_from_token(token: str) -> AuthUser:
     if not isinstance(user_id, int):
         raise AuthError("invalid_token", "登录状态无效，请重新登录", status_code=401)
 
-    _init_db()
+    init_schema()
     row = _get_user_row_by_id(user_id)
     if row is None:
         raise AuthError("invalid_token", "登录状态无效，请重新登录", status_code=401)
@@ -113,37 +113,13 @@ def _decode_token(token: str) -> dict[str, Any]:
     return payload
 
 
-def _connect() -> sqlite3.Connection:
-    db_path = Path(settings.auth_db_path)
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def _init_db() -> None:
-    with _connect() as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                email TEXT NOT NULL UNIQUE,
-                display_name TEXT,
-                password_hash TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            )
-            """
-        )
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
-
-
 def _get_user_row_by_email(email: str) -> sqlite3.Row | None:
-    with _connect() as conn:
+    with connect() as conn:
         return conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
 
 
 def _get_user_row_by_id(user_id: int) -> sqlite3.Row | None:
-    with _connect() as conn:
+    with connect() as conn:
         return conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
 
 
@@ -215,3 +191,145 @@ def _b64_decode_bytes(value: str) -> bytes:
 
 def _now_iso() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+# ── Email verification code ────────────────────────────────────────────
+
+VERIFICATION_CODE_MAX_ATTEMPTS = 5
+VERIFICATION_CODE_TTL_MINUTES = 10
+VERIFICATION_CODE_RESEND_SECONDS = 60
+
+
+def send_verification_code(email: str, ip_address: str | None = None) -> None:
+    """Generate a 6-digit code, store hash in DB, and print to console (MVP).
+
+    In production, replace the print() with an email sending service (e.g. SendGrid, Brevo).
+    """
+    init_schema()
+    now = _now_iso()
+    code = _generate_code()
+    code_hash = _hash_code(code)
+    expires_at = _iso_at_offset(VERIFICATION_CODE_TTL_MINUTES * 60)
+    ip_hash = _hash_ip(ip_address) if ip_address else None
+
+    # Rate-limit: 60s between sends for the same email
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT created_at FROM email_verification_codes WHERE email = ? ORDER BY id DESC LIMIT 1",
+            (email,),
+        ).fetchone()
+        if row:
+            last_sent = _parse_iso_to_unix(str(row["created_at"]))
+            if time.time() - last_sent < VERIFICATION_CODE_RESEND_SECONDS:
+                raise AuthError("code_rate_limited", "发送过于频繁，请稍后再试", status_code=429)
+
+        conn.execute(
+            "INSERT INTO email_verification_codes (email, code_hash, expires_at, created_at, ip_hash) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (email, code_hash, expires_at, now, ip_hash),
+        )
+        conn.commit()
+
+    # MVP: print code to console / terminal
+    print(f"\n{'='*50}")
+    print(f"[契合] 验证码 for {email}: {code}")
+    print(f"有效期: {VERIFICATION_CODE_TTL_MINUTES} 分钟")
+    print(f"{'='*50}\n")
+
+
+def verify_code_and_login(email: str, code: str) -> tuple[AuthUser, str, int]:
+    """Verify a 6-digit code and return user + token.
+
+    If the user doesn't exist, auto-register them (code-based first login).
+    """
+    init_schema()
+    code_hash = _hash_code(code)
+
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM email_verification_codes "
+            "WHERE email = ? AND consumed_at IS NULL "
+            "ORDER BY id DESC LIMIT 1",
+            (email,),
+        ).fetchone()
+
+        if not row:
+            raise AuthError("invalid_code", "验证码不正确或已过期", status_code=401)
+
+        if row["attempts"] >= VERIFICATION_CODE_MAX_ATTEMPTS:
+            conn.execute(
+                "UPDATE email_verification_codes SET consumed_at = ? WHERE id = ?",
+                (_now_iso(), row["id"]),
+            )
+            conn.commit()
+            raise AuthError("code_expired", "验证码已失效，请重新获取", status_code=401)
+
+        if _parse_iso_to_unix(str(row["expires_at"])) < int(time.time()):
+            conn.execute(
+                "UPDATE email_verification_codes SET consumed_at = ? WHERE id = ?",
+                (_now_iso(), row["id"]),
+            )
+            conn.commit()
+            raise AuthError("code_expired", "验证码已过期，请重新获取", status_code=401)
+
+        if not hmac.compare_digest(str(row["code_hash"]), code_hash):
+            conn.execute(
+                "UPDATE email_verification_codes SET attempts = attempts + 1 WHERE id = ?",
+                (row["id"],),
+            )
+            conn.commit()
+            raise AuthError("invalid_code", "验证码不正确", status_code=401)
+
+        # Mark as consumed
+        conn.execute(
+            "UPDATE email_verification_codes SET consumed_at = ? WHERE id = ?",
+            (_now_iso(), row["id"]),
+        )
+        conn.commit()
+
+    # Find or create user
+    user_row = _get_user_row_by_email(email)
+    if user_row is None:
+        # Auto-register
+        now = _now_iso()
+        display_name = email.split("@")[0]
+        password_hash = _hash_password(secrets.token_urlsafe(32))
+        with connect() as conn:
+            cursor = conn.execute(
+                "INSERT INTO users (email, display_name, password_hash, created_at) VALUES (?, ?, ?, ?)",
+                (email, display_name, password_hash, now),
+            )
+            conn.commit()
+        user = AuthUser(id=int(cursor.lastrowid), email=email, display_name=display_name, created_at=now)
+    else:
+        user = _row_to_user(user_row)
+
+    token, expires_in = create_access_token(user)
+    return user, token, expires_in
+
+
+def _generate_code() -> str:
+    return str(secrets.randbelow(1_000_000)).zfill(6)
+
+
+def _hash_code(code: str) -> str:
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", code.encode("utf-8"), salt, 100_000)
+    return f"pbkdf2_sha256$100000${_b64_bytes(salt)}${_b64_bytes(digest)}"
+
+
+def _hash_ip(ip: str) -> str:
+    return hashlib.sha256(f"salt-qihe:{ip}".encode()).hexdigest()
+
+
+def _parse_iso_to_unix(iso_str: str) -> float:
+    import calendar
+    try:
+        parsed = time.strptime(iso_str, "%Y-%m-%dT%H:%M:%SZ")
+        return calendar.timegm(parsed)
+    except ValueError:
+        return 0
+
+
+def _iso_at_offset(seconds_from_now: int) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + seconds_from_now))

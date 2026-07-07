@@ -15,6 +15,9 @@ class StoredFile:
     path: str
     char_count: int = 0
     text_preview: str = ""
+    owner_user_id: int | None = None
+    created_at: str | None = None
+    expires_at: str | None = None
 
 
 def ensure_upload_dir() -> Path:
@@ -42,6 +45,10 @@ def load_metadata(file_id: str) -> StoredFile | None:
     if not path.exists():
         return None
     data = json.loads(path.read_text(encoding="utf-8"))
+    # Backward compat: older metadata files may lack new fields
+    data.setdefault("owner_user_id", None)
+    data.setdefault("created_at", None)
+    data.setdefault("expires_at", None)
     return StoredFile(**data)
 
 
@@ -57,3 +64,21 @@ def find_upload(file_id: str) -> Path | None:
             continue
         return path
     return None
+
+
+def extracted_text_path(file_id: str) -> Path:
+    """Path to the extracted full text file for a given upload."""
+    return ensure_upload_dir() / f"{file_id}.txt"
+
+
+def save_extracted_text(file_id: str, text: str) -> None:
+    """Save the full extracted text alongside the uploaded file metadata."""
+    extracted_text_path(file_id).write_text(text, encoding="utf-8")
+
+
+def load_extracted_text(file_id: str) -> str | None:
+    """Load the full extracted text for a file, if it exists."""
+    path = extracted_text_path(file_id)
+    if not path.exists():
+        return None
+    return path.read_text(encoding="utf-8")

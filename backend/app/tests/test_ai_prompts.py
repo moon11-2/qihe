@@ -27,7 +27,7 @@ class RaisingProvider:
 
 
 def _client(tmp_path: Path, monkeypatch) -> TestClient:
-    monkeypatch.setattr(settings, "auth_db_path", str(tmp_path / "auth.sqlite3"))
+    monkeypatch.setattr(settings, "db_path", str(tmp_path / "auth.sqlite3"))
     monkeypatch.setattr(settings, "jwt_secret", "test-secret")
     monkeypatch.setattr(settings, "jwt_expires_minutes", 60)
     client = TestClient(create_app())

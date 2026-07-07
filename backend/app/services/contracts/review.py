@@ -2,7 +2,7 @@ import json
 import re
 from typing import Any
 
-from app.models.contracts import ClauseReview, ContractParties, ContractRunRequest, ContractSource, ReviewResult
+from app.models.contracts import ClauseReview, ContractBlock, ContractParties, ContractRunRequest, ContractSource, ReviewResult
 from app.services.contracts.common import (
     append_once,
     bounded_score,
@@ -16,6 +16,7 @@ from app.services.contracts.common import (
     text_or_default,
     text_or_none,
 )
+from app.services.contracts.segmenter import find_block_for_offset, segment_text
 from app.services.llm.base import LLMProvider
 from app.services.llm.qwen import create_qwen_provider
 
@@ -93,6 +94,7 @@ async def run_review(request: ContractRunRequest, provider: LLMProvider | None =
     if not text:
         return build_review_fallback(source, "未收到可审查的合同文本，请粘贴合同正文或上传可读取文件。")
 
+    perspective = _resolve_perspective(request)
     review_metadata = pick_metadata(request.metadata, REVIEW_METADATA_KEYS)
     llm = provider or create_qwen_provider()
     messages = [
@@ -101,6 +103,7 @@ async def run_review(request: ContractRunRequest, provider: LLMProvider | None =
             "role": "user",
             "content": (
                 "请审查以下合同文本，并按指定 JSON schema 输出。\n\n"
+                f"{_perspective_instruction(perspective)}\n"
                 f"结构化审查条件 JSON：{json.dumps(review_metadata, ensure_ascii=False)}\n"
                 f"结构化审查条件说明：\n{metadata_text(review_metadata, REVIEW_METADATA_LABELS) or '无'}\n\n"
                 f"合同文本：\n{text}"
@@ -121,6 +124,12 @@ def normalize_review_result(data: dict[str, Any], source: ContractSource, source
     overall_level = risk_level(data.get("risk_level"), _derive_overall_level(clause_reviews))
     parties = _normalize_parties(parties_data, source_text)
 
+    # Segment source text into blocks
+    blocks = segment_text(source_text)
+
+    # Bind risks to blocks
+    _bind_risks_to_blocks(clause_reviews, blocks)
+
     return ReviewResult(
         title=safe_output_text(text_or_default(data.get("title"), "合同审查报告")),
         summary=append_once(
@@ -139,12 +148,15 @@ def normalize_review_result(data: dict[str, Any], source: ContractSource, source
         clause_reviews=clause_reviews,
         parties=parties,
         source=source,
+        blocks=blocks,
     )
 
 
 def build_review_fallback(source: ContractSource, message: str, source_text: str = "") -> ReviewResult:
     fallback_reviews = _build_fallback_clause_reviews(source_text, message)
     overall_level = _derive_overall_level(fallback_reviews)
+    blocks = segment_text(source_text)
+    _bind_risks_to_blocks(fallback_reviews, blocks)
     return ReviewResult(
         title="合同审查报告",
         summary=append_once(_fallback_summary(message, fallback_reviews, source_text), REVIEW_DISCLAIMER),
@@ -155,6 +167,7 @@ def build_review_fallback(source: ContractSource, message: str, source_text: str
         clause_reviews=fallback_reviews,
         parties=_normalize_parties({}, source_text),
         source=source,
+        blocks=blocks,
     )
 
 
@@ -432,3 +445,55 @@ def _prefer_amount(model_amount: str | None, inferred_amount: str | None) -> str
     if inferred_amount and (not model_amount or not re.search(r"元|万元|人民币|美元|¥|\$", model_amount)):
         return inferred_amount
     return model_amount or inferred_amount
+
+
+def _resolve_perspective(request: ContractRunRequest) -> str:
+    """Resolve review perspective from request, preferring top-level field over metadata."""
+    if request.review_perspective:
+        return request.review_perspective
+    metadata_perspective = request.metadata.get("review_perspective")
+    if metadata_perspective in ("party_a", "party_b", "neutral"):
+        return str(metadata_perspective)
+    return "neutral"
+
+
+def _perspective_instruction(perspective: str) -> str:
+    """Generate perspective-specific instruction for the review prompt."""
+    if perspective == "party_a":
+        return (
+            "审查立场：请站在甲方利益角度识别风险并给出修改建议。"
+            "重点关注条款是否对甲方不利、是否存在责任过重或权利受限的情况，"
+            "修订建议应倾向于保护甲方权益。"
+        )
+    if perspective == "party_b":
+        return (
+            "审查立场：请站在乙方利益角度识别风险并给出修改建议。"
+            "重点关注条款是否对乙方不利、是否存在责任过重或权利受限的情况，"
+            "修订建议应倾向于保护乙方权益。"
+        )
+    return (
+        "审查立场：请以中立立场进行审查，兼顾双方公平性，"
+        "客观指出对任一方可能不利的条款并提出平衡的修改建议。"
+    )
+
+
+def _bind_risks_to_blocks(
+    clause_reviews: list[ClauseReview],
+    blocks: list["ContractBlock"],
+) -> None:
+    """Assign block_id to each clause review by matching offsets or excerpt text."""
+    for review in clause_reviews:
+        if review.block_id:
+            continue
+        # First try by offset
+        if review.start_offset is not None:
+            block = find_block_for_offset(blocks, review.start_offset)
+            if block:
+                review.block_id = block.block_id
+                continue
+        # Then try by excerpt text
+        if review.original_excerpt and blocks:
+            for block in blocks:
+                if review.original_excerpt in block.text:
+                    review.block_id = block.block_id
+                    break
