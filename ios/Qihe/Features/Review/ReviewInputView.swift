@@ -9,6 +9,7 @@ struct ReviewInputView: View {
     @State private var isAdditionalInfoExpanded = false
     @State private var contractType = ""
     @State private var userRole = ""
+    @AppStorage("review.perspective") private var perspectiveRaw: String = ReviewPerspective.neutral.rawValue
     @State private var focusAreas = ""
     @State private var hasMigratedExtraInfo = false
     @State private var attachment: UploadedFile?
@@ -251,6 +252,32 @@ struct ReviewInputView: View {
         PaperCard(padding: 14) {
             DisclosureGroup(isExpanded: $isAdditionalInfoExpanded) {
                 VStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("审查立场")
+                            .font(QiheFont.caption(size: 12, weight: .semibold))
+                            .foregroundStyle(QiheColor.muted)
+
+                        HStack(spacing: 0) {
+                            ForEach(ReviewPerspective.allCases, id: \.self) { perspective in
+                                Button {
+                                    perspectiveRaw = perspective.rawValue
+                                } label: {
+                                    Text(perspective.displayName)
+                                        .font(QiheFont.body(size: 13, weight: reviewPerspective == perspective ? .semibold : .regular))
+                                        .foregroundStyle(reviewPerspective == perspective ? QiheColor.paper : QiheColor.inkSoft)
+                                        .frame(maxWidth: .infinity)
+                                        .frame(height: 36)
+                                        .background(reviewPerspective == perspective ? QiheColor.navy : QiheColor.paper)
+                                }
+                            }
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .strokeBorder(QiheColor.lineStrong, lineWidth: 1)
+                        )
+                    }
+
                     metadataField(
                         title: "合同类型",
                         placeholder: "如：房屋租赁、服务、买卖",
@@ -389,6 +416,10 @@ struct ReviewInputView: View {
             || focusAreas.nilIfBlank != nil
     }
 
+    private var reviewPerspective: ReviewPerspective {
+        ReviewPerspective(rawValue: perspectiveRaw) ?? .neutral
+    }
+
     private var reviewMetadata: [String: JSONValue] {
         var metadata: [String: JSONValue] = [:]
         if let contractType = contractType.nilIfBlank {
@@ -401,6 +432,7 @@ struct ReviewInputView: View {
         if let focusAreas = focusAreas.nilIfBlank {
             metadata["focus_areas"] = .string(focusAreas)
         }
+        metadata["review_perspective"] = .string(reviewPerspective.rawValue)
         return metadata
     }
 

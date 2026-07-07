@@ -1148,6 +1148,21 @@ enum RevisionState: String, Codable, Hashable {
     case confirmed
 }
 
+/// 审查立场：甲方视角 / 乙方视角 / 中立角度
+enum ReviewPerspective: String, CaseIterable, Codable, Hashable {
+    case partyA = "party_a"
+    case partyB = "party_b"
+    case neutral = "neutral"
+
+    var displayName: String {
+        switch self {
+        case .partyA: return "我是甲方"
+        case .partyB: return "我是乙方"
+        case .neutral: return "中立角度"
+        }
+    }
+}
+
 /// 本地修改记录
 struct LocalRevision: Identifiable, Codable, Hashable {
     var id: UUID
