@@ -14,6 +14,9 @@ struct ReviewResultView: View {
     @State private var highlightedRiskID: UUID?
     @State private var selectedRiskForDetail: RiskItem?
     @State private var selectedRiskForEdit: RiskItem?
+    @State private var showLocateDialog = false
+    @State private var locateTargetParagraphID: Int?
+    @State private var flashParagraphID: Int?
 
     private var confirmedRiskIDs: Set<String> {
         revisionStore.confirmedRiskIDs(for: recordId)
@@ -82,6 +85,22 @@ struct ReviewResultView: View {
                                 return
                             }
                             scrollToHighlightedRisk(in: proxy)
+                        }
+                        .onChange(of: locateTargetParagraphID) { _, newID in
+                            guard let id = newID else { return }
+                            withAnimation(.easeInOut(duration: 0.26)) {
+                                proxy.scrollTo(id, anchor: .top)
+                            }
+                            flashParagraphID = id
+                            // 重置，确保再次选择同一风险时仍能触发滚动
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                locateTargetParagraphID = nil
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                                withAnimation(.easeOut(duration: 0.4)) {
+                                    flashParagraphID = nil
+                                }
+                            }
                         }
                     }
                 }
@@ -152,6 +171,27 @@ struct ReviewResultView: View {
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
         }
+        .confirmationDialog("定位风险", isPresented: $showLocateDialog, titleVisibility: .visible) {
+            if let risks = historyStore.record(id: recordId)?.reviewPayload?.result.risks,
+               !risks.isEmpty {
+                ForEach(risks) { risk in
+                    Button {
+                        locateRisk(risk)
+                    } label: {
+                        HStack {
+                            Circle()
+                                .fill(sourceRiskColor(for: risk.riskLevel))
+                                .frame(width: 8, height: 8)
+                            Text(risk.displayTitle)
+                                .lineLimit(1)
+                        }
+                    }
+                }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("选择一个风险项，自动跳转到原文对应段落并高亮")
+        }
     }
 
     private func resolvedParagraphText(for risk: RiskItem) -> String {
@@ -164,6 +204,24 @@ struct ReviewResultView: View {
             return paragraph.text
         }
         return risk.originalExcerpt ?? risk.originalText ?? ""
+    }
+
+    /// 定位风险：切换到原文 tab 并滚动到该风险所在的段落
+    private func locateRisk(_ risk: RiskItem) {
+        guard let payload = historyStore.record(id: recordId)?.reviewPayload else { return }
+        let resolvedText = resolveSourceText(from: payload)
+        let sourceMap = SourceRiskLocator.annotate(result: payload.result, sourceTextOverride: resolvedText)
+
+        guard let paragraph = sourceMap.paragraphs.first(where: { $0.risks.contains(where: { $0.id == risk.id }) }) else {
+            // 如果在原文中无法定位，回退到风险列表 tab
+            highlightedRiskID = risk.id
+            selectedTab = .risks
+            return
+        }
+
+        // 切换到原文 tab 并触发滚动+高亮
+        selectedTab = .source
+        locateTargetParagraphID = paragraph.id
     }
 
     private var tabBar: some View {
@@ -202,6 +260,7 @@ struct ReviewResultView: View {
             sourceMap: sourceMap,
             attachmentFilename: payload.attachment?.filename,
             confirmedRiskIDs: confirmedRiskIDs,
+            flashParagraphID: flashParagraphID,
             onSelectRisk: { risk in
                 selectedRiskForDetail = risk
             },
@@ -338,6 +397,10 @@ struct ReviewResultView: View {
 
     private func reviewActionBar(_ payload: ReviewHistoryPayload) -> some View {
         HStack(spacing: 10) {
+            QiheSecondaryButton(title: "定位", systemImage: "location.magnifyingglass") {
+                showLocateDialog = true
+            }
+
             QiheSecondaryButton(title: "继续修改", systemImage: "square.and.pencil") {
                 guard requireSignIn() else {
                     return
@@ -696,6 +759,7 @@ struct OriginalRiskDocumentView: View {
     let sourceMap: SourceRiskMap
     var attachmentFilename: String?
     var confirmedRiskIDs: Set<String> = []
+    var flashParagraphID: Int?
     var onSelectRisk: (RiskItem) -> Void
     var onFocusUnlocatedRisk: (RiskItem) -> Void
 
@@ -717,8 +781,10 @@ struct OriginalRiskDocumentView: View {
                         SourceParagraphBlock(
                             paragraph: paragraph,
                             isConfirmed: paragraph.risks.contains(where: { confirmedRiskIDs.contains($0.id.uuidString) }),
+                            isFlashing: flashParagraphID == paragraph.id,
                             onSelectRisk: onSelectRisk
                         )
+                        .id(paragraph.id)
 
                         if paragraph.id != lastParagraphID {
                             Divider().background(QiheColor.line).padding(.vertical, 4)
@@ -733,7 +799,10 @@ struct OriginalRiskDocumentView: View {
 private struct SourceParagraphBlock: View {
     let paragraph: AnnotatedSourceParagraph
     var isConfirmed = false
+    var isFlashing = false
     let onSelectRisk: (RiskItem) -> Void
+
+    @State private var flashOpacity: Double = 0
 
     var body: some View {
         Group {
@@ -745,6 +814,24 @@ private struct SourceParagraphBlock: View {
                 .accessibilityLabel("有风险段落，\(primaryRisk.riskLevel.label)")
             } else {
                 content
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            if isFlashing {
+                RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous)
+                    .fill(QiheColor.amber.opacity(flashOpacity))
+                    .allowsHitTesting(false)
+            }
+        }
+        .onChange(of: isFlashing) { _, newValue in
+            guard newValue else { return }
+            withAnimation(.easeIn(duration: 0.15)) {
+                flashOpacity = 0.35
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                withAnimation(.easeOut(duration: 0.45)) {
+                    flashOpacity = 0
+                }
             }
         }
     }
