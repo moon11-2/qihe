@@ -28,6 +28,7 @@ backend/uv.lock
 # FastAPI / local runtime
 uploads/
 exports/
+backend/data/
 
 # Xcode / Swift
 DerivedData/

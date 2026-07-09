@@ -517,7 +517,6 @@ struct ReviewInputView: View {
     private func runReviewJob(token: UUID) async {
         let currentRequestText = requestText
         let currentRequestFile = requestFile
-        let currentAttachment = attachment
         let currentMetadata = reviewMetadata
 
         defer {

@@ -78,7 +78,7 @@ struct GenerateResultView: View {
         }
         .task {
             // 任务三：视图出现时从后端拉取 revisions 并合并到本地缓存
-            await revisionStore.fetchAndMergeRevisions(recordId: recordId)
+            _ = await revisionStore.fetchAndMergeRevisions(recordId: recordId)
         }
     }
 

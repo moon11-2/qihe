@@ -37,12 +37,12 @@ struct APIClient {
 
     /// 发送邮箱验证码
     func sendVerificationCode(email: String) async throws {
-        try await send(
+        let _: EmptyResponse = try await send(
             path: "api/auth/send-code",
             method: "POST",
             body: AuthSendCodeRequest(email: email),
             requiresAuth: false
-        ) as EmptyResponse
+        )
     }
 
     /// 验证码登录
@@ -156,12 +156,13 @@ struct APIClient {
         metadata structuredMetadata: [String: JSONValue] = [:]
     ) async throws -> String {
         let body = ReviewJobRequest(
+            mode: .review,
             text: text?.trimmedForInput.nilIfBlank,
             fileId: file?.fileId,
             metadata: metadata(for: file, merging: structuredMetadata)
         )
         let response: JobCreatedResponse = try await send(
-            path: "api/contracts/review-jobs",
+            path: "api/jobs/review-jobs",
             method: "POST",
             body: body
         )
@@ -175,12 +176,13 @@ struct APIClient {
         metadata structuredMetadata: [String: JSONValue] = [:]
     ) async throws -> String {
         let body = GenerateJobRequest(
+            mode: .generate,
             text: text?.trimmedForInput.nilIfBlank,
             fileId: file?.fileId,
             metadata: metadata(for: file, merging: structuredMetadata)
         )
         let response: JobCreatedResponse = try await send(
-            path: "api/contracts/generate-jobs",
+            path: "api/jobs/generate-jobs",
             method: "POST",
             body: body
         )
@@ -199,13 +201,13 @@ struct APIClient {
 
     /// 获取当前用户积分余额
     func getBalance() async throws -> CreditBalance {
-        try await send(path: "api/credits/balance", method: "GET")
+        try await send(path: "api/entitlements/me", method: "GET")
     }
 
     /// 激活码兑换
     func redeemCode(code: String) async throws -> ActivationCodeResponse {
         try await send(
-            path: "api/credits/redeem",
+            path: "api/entitlements/activate",
             method: "POST",
             body: ActivationCodeRequest(code: code)
         )

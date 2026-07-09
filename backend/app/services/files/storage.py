@@ -109,6 +109,19 @@ def stored_upload_path(metadata: StoredFile) -> Path | None:
     return expected_path
 
 
+def save_extracted_text(file_id: str, text: str) -> None:
+    extracted_text_path(file_id).write_text(text, encoding="utf-8")
+
+
+def load_extracted_text(file_id: str) -> str | None:
+    if not is_valid_file_id(file_id):
+        return None
+    path = extracted_text_path(file_id)
+    if not path.exists():
+        return None
+    return path.read_text(encoding="utf-8")
+
+
 def is_valid_file_id(file_id: str) -> bool:
     try:
         parsed = UUID(file_id, version=4)

@@ -2,6 +2,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, UploadFile
+from starlette.responses import PlainTextResponse
 
 from app.api.deps import require_current_user
 from app.core.config import settings
@@ -9,7 +10,17 @@ from app.core.errors import api_error
 from app.models.auth import AuthUser
 from app.models.files import FileUploadResponse
 from app.services.files.extractor import SUPPORTED_SUFFIXES, TextExtractionError, extract_text
-from app.services.files.storage import StoredFile, default_expires_at, save_metadata, upload_path, utc_now_iso
+from app.services.files.storage import (
+    StoredFile,
+    default_expires_at,
+    load_extracted_text,
+    load_metadata,
+    metadata_allows_owner,
+    save_extracted_text,
+    save_metadata,
+    upload_path,
+    utc_now_iso,
+)
 
 router = APIRouter(prefix="/api/files", tags=["files"])
 
@@ -71,6 +82,7 @@ async def upload_file(
             expires_at=default_expires_at(),
         )
         save_metadata(stored_file)
+        save_extracted_text(file_id, text)
     finally:
         await file.close()
 
@@ -82,3 +94,19 @@ async def upload_file(
         text_preview=preview,
         char_count=len(text),
     )
+
+
+@router.get("/{file_id}/text")
+async def get_file_text(
+    file_id: str,
+    user: AuthUser = Depends(require_current_user),
+) -> PlainTextResponse:
+    """Get the full extracted text for an uploaded file."""
+    metadata = load_metadata(file_id)
+    if metadata is None or not metadata_allows_owner(metadata, user.id):
+        raise api_error(404, "file_not_found", "文件不存在")
+
+    text = load_extracted_text(file_id)
+    if text is None:
+        raise api_error(404, "text_not_found", "文件文本不存在")
+    return PlainTextResponse(content=text, media_type="text/plain; charset=utf-8")

@@ -13,6 +13,7 @@ from app.services.contracts.common import (
     safe_string_list,
     text_or_default,
 )
+from app.services.contracts.segmenter import segment_text
 from app.services.llm.base import LLMProvider
 from app.services.llm.qwen import create_qwen_provider
 
@@ -87,6 +88,9 @@ def normalize_generate_result(
     )
     notes = _complete_notes(notes, known_fields)
 
+    # Segment draft into blocks
+    blocks = segment_text(draft)
+
     return GenerateResult(
         title=title,
         draft=_complete_draft_with_known_fields(draft, known_fields),
@@ -94,6 +98,7 @@ def normalize_generate_result(
         pre_sign_checklist=checklist,
         notes=notes,
         source=source,
+        blocks=blocks,
     )
 
 
@@ -153,6 +158,7 @@ def build_generate_fallback(
             },
         ),
         source=source,
+        blocks=segment_text(draft),
     )
 
 

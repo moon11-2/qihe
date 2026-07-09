@@ -26,15 +26,40 @@ struct ContractJob: Codable, Hashable, Identifiable, Sendable {
     var id: String
     var status: JobStatus
     var step: String?
+    var progress: Int?
     var mode: ContractMode?
     var reviewResult: ReviewResult?
     var generateResult: GenerateResult?
     var errorMessage: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, status, step, mode
+        case id
+        case jobId
+        case jobIdSnake = "job_id"
+        case status
+        case step
+        case currentStep
+        case currentStepSnake = "current_step"
+        case progress
+        case mode
+        case result
+        case error
+        case reviewResult
+        case reviewResultSnake = "review_result"
+        case generateResult
+        case generateResultSnake = "generate_result"
+        case errorMessage
+        case errorMessageSnake = "error_message"
+    }
+
+    enum ResultCodingKeys: String, CodingKey {
+        case type
         case reviewResult = "review_result"
         case generateResult = "generate_result"
+    }
+
+    enum ErrorCodingKeys: String, CodingKey {
+        case message
         case errorMessage = "error_message"
     }
 
@@ -42,6 +67,7 @@ struct ContractJob: Codable, Hashable, Identifiable, Sendable {
         id: String = "",
         status: JobStatus = .queued,
         step: String? = nil,
+        progress: Int? = nil,
         mode: ContractMode? = nil,
         reviewResult: ReviewResult? = nil,
         generateResult: GenerateResult? = nil,
@@ -50,20 +76,107 @@ struct ContractJob: Codable, Hashable, Identifiable, Sendable {
         self.id = id
         self.status = status
         self.step = step
+        self.progress = progress
         self.mode = mode
         self.reviewResult = reviewResult
         self.generateResult = generateResult
         self.errorMessage = errorMessage
     }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(String.self, forKey: .id)
+            ?? container.decodeIfPresent(String.self, forKey: .jobId)
+            ?? container.decodeIfPresent(String.self, forKey: .jobIdSnake)
+            ?? ""
+        status = try container.decodeIfPresent(JobStatus.self, forKey: .status) ?? .queued
+        step = try container.decodeIfPresent(String.self, forKey: .step)
+            ?? container.decodeIfPresent(String.self, forKey: .currentStep)
+            ?? container.decodeIfPresent(String.self, forKey: .currentStepSnake)
+        progress = try container.decodeIfPresent(Int.self, forKey: .progress)
+        mode = try container.decodeIfPresent(ContractMode.self, forKey: .mode)
+        reviewResult = try container.decodeIfPresent(ReviewResult.self, forKey: .reviewResult)
+            ?? container.decodeIfPresent(ReviewResult.self, forKey: .reviewResultSnake)
+        generateResult = try container.decodeIfPresent(GenerateResult.self, forKey: .generateResult)
+            ?? container.decodeIfPresent(GenerateResult.self, forKey: .generateResultSnake)
+        errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage)
+            ?? container.decodeIfPresent(String.self, forKey: .errorMessageSnake)
+
+        if errorMessage == nil,
+           let errorContainer = try? container.nestedContainer(keyedBy: ErrorCodingKeys.self, forKey: .error) {
+            errorMessage = try errorContainer.decodeIfPresent(String.self, forKey: .message)
+                ?? errorContainer.decodeIfPresent(String.self, forKey: .errorMessage)
+        }
+
+        guard let resultValue = try container.decodeIfPresent(JSONValue.self, forKey: .result) else {
+            return
+        }
+
+        let resultObject: [String: JSONValue]
+        if case let .object(object) = resultValue {
+            resultObject = object
+        } else {
+            resultObject = [:]
+        }
+
+        if reviewResult == nil, let nested = resultObject["review_result"] {
+            reviewResult = Self.decodeResult(ReviewResult.self, from: nested)
+            mode = mode ?? .review
+        }
+        if generateResult == nil, let nested = resultObject["generate_result"] {
+            generateResult = Self.decodeResult(GenerateResult.self, from: nested)
+            mode = mode ?? .generate
+        }
+
+        let resultType: String?
+        if case let .string(type) = resultObject["type"] {
+            resultType = type
+        } else {
+            resultType = nil
+        }
+
+        if reviewResult == nil, resultType == "review_result" {
+            reviewResult = Self.decodeResult(ReviewResult.self, from: resultValue)
+            mode = mode ?? .review
+        }
+        if generateResult == nil, resultType == "generate_result" {
+            generateResult = Self.decodeResult(GenerateResult.self, from: resultValue)
+            mode = mode ?? .generate
+        }
+    }
+
+    private static func decodeResult<Result: Decodable>(_ type: Result.Type, from value: JSONValue) -> Result? {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        guard let data = try? encoder.encode(value) else { return nil }
+        return try? decoder.decode(Result.self, from: data)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(status, forKey: .status)
+        try container.encodeIfPresent(step, forKey: .step)
+        try container.encodeIfPresent(progress, forKey: .progress)
+        try container.encodeIfPresent(mode, forKey: .mode)
+        try container.encodeIfPresent(reviewResult, forKey: .reviewResult)
+        try container.encodeIfPresent(generateResult, forKey: .generateResult)
+        try container.encodeIfPresent(errorMessage, forKey: .errorMessage)
+    }
 }
 
 /// 提交审查 job 的请求体
 struct ReviewJobRequest: Codable, Hashable {
+    let mode: ContractMode
     let text: String?
     let fileId: String?
     let metadata: [String: JSONValue]
 
     enum CodingKeys: String, CodingKey {
+        case mode
         case text
         case fileId = "file_id"
         case metadata
@@ -72,11 +185,13 @@ struct ReviewJobRequest: Codable, Hashable {
 
 /// 提交生成 job 的请求体
 struct GenerateJobRequest: Codable, Hashable {
+    let mode: ContractMode
     let text: String?
     let fileId: String?
     let metadata: [String: JSONValue]
 
     enum CodingKeys: String, CodingKey {
+        case mode
         case text
         case fileId = "file_id"
         case metadata
@@ -97,6 +212,31 @@ struct CreditBalance: Codable, Hashable, Sendable {
     var plan: String?
 
     var isLow: Bool { credits < 2 }
+
+    enum CodingKeys: String, CodingKey {
+        case credits
+        case balance
+        case plan
+    }
+
+    init(credits: Int, plan: String? = nil) {
+        self.credits = credits
+        self.plan = plan
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        credits = try container.decodeIfPresent(Int.self, forKey: .credits)
+            ?? container.decodeIfPresent(Int.self, forKey: .balance)
+            ?? 0
+        plan = try container.decodeIfPresent(String.self, forKey: .plan)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(credits, forKey: .credits)
+        try container.encodeIfPresent(plan, forKey: .plan)
+    }
 }
 
 /// 激活码兑换请求
@@ -109,6 +249,36 @@ struct ActivationCodeResponse: Codable, Hashable {
     let success: Bool
     let message: String?
     let credits: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case success
+        case message
+        case credits
+        case creditsAdded = "credits_added"
+        case balance
+    }
+
+    init(success: Bool, message: String?, credits: Int?) {
+        self.success = success
+        self.message = message
+        self.credits = credits
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        success = try container.decodeIfPresent(Bool.self, forKey: .success) ?? true
+        message = try container.decodeIfPresent(String.self, forKey: .message)
+        credits = try container.decodeIfPresent(Int.self, forKey: .credits)
+            ?? container.decodeIfPresent(Int.self, forKey: .balance)
+            ?? container.decodeIfPresent(Int.self, forKey: .creditsAdded)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(success, forKey: .success)
+        try container.encodeIfPresent(message, forKey: .message)
+        try container.encodeIfPresent(credits, forKey: .credits)
+    }
 
     var displayMessage: String {
         message ?? (success ? "兑换成功，积分已到账。" : "兑换失败，请检查激活码。")
@@ -342,12 +512,19 @@ struct ContractBlock: Codable, Hashable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case id
+        case blockId
+        case blockIdSnake = "block_id"
         case text
         case kind
-        case placeholderName = "placeholder_name"
-        case riskIds = "risk_ids"
-        case riskLevel = "risk_level"
-        case originalText = "original_text"
+        case type
+        case placeholderName
+        case placeholderNameSnake = "placeholder_name"
+        case riskIds
+        case riskIdsSnake = "risk_ids"
+        case riskLevel
+        case riskLevelSnake = "risk_level"
+        case originalText
+        case originalTextSnake = "original_text"
     }
 
     init(
@@ -370,13 +547,44 @@ struct ContractBlock: Codable, Hashable, Identifiable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(String.self, forKey: .id)
+        id = try container.decodeIfPresent(String.self, forKey: .id)
+            ?? container.decodeIfPresent(String.self, forKey: .blockId)
+            ?? container.decodeIfPresent(String.self, forKey: .blockIdSnake)
+            ?? UUID().uuidString
         text = try container.decode(String.self, forKey: .text)
-        kind = try container.decodeIfPresent(ContractBlockKind.self, forKey: .kind) ?? .paragraph
+        if let decodedKind = try container.decodeIfPresent(ContractBlockKind.self, forKey: .kind) {
+            kind = decodedKind
+        } else if let backendType = try container.decodeIfPresent(String.self, forKey: .type) {
+            switch backendType {
+            case "placeholder":
+                kind = .placeholder
+            case "clause", "heading":
+                kind = .heading
+            default:
+                kind = .paragraph
+            }
+        } else {
+            kind = .paragraph
+        }
         placeholderName = try container.decodeIfPresent(String.self, forKey: .placeholderName)
+            ?? container.decodeIfPresent(String.self, forKey: .placeholderNameSnake)
         riskIds = try container.decodeIfPresent([String].self, forKey: .riskIds)
+            ?? container.decodeIfPresent([String].self, forKey: .riskIdsSnake)
         riskLevel = try container.decodeIfPresent(RiskLevel.self, forKey: .riskLevel)
+            ?? container.decodeIfPresent(RiskLevel.self, forKey: .riskLevelSnake)
         originalText = try container.decodeIfPresent(String.self, forKey: .originalText)
+            ?? container.decodeIfPresent(String.self, forKey: .originalTextSnake)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(text, forKey: .text)
+        try container.encode(kind, forKey: .kind)
+        try container.encodeIfPresent(placeholderName, forKey: .placeholderName)
+        try container.encodeIfPresent(riskIds, forKey: .riskIds)
+        try container.encodeIfPresent(riskLevel, forKey: .riskLevel)
+        try container.encodeIfPresent(originalText, forKey: .originalText)
     }
 
     /// 转换为前端的 DocumentSegment
@@ -419,12 +627,19 @@ struct ContractRevision: Codable, Hashable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case id
-        case blockId = "block_id"
-        case riskId = "risk_id"
-        case beforeText = "before_text"
-        case afterText = "after_text"
+        case revisionId
+        case revisionIdSnake = "revision_id"
+        case blockId
+        case blockIdSnake = "block_id"
+        case riskId
+        case riskIdSnake = "risk_id"
+        case beforeText
+        case beforeTextSnake = "before_text"
+        case afterText
+        case afterTextSnake = "after_text"
         case status
-        case createdAt = "created_at"
+        case createdAt
+        case createdAtSnake = "created_at"
     }
 
     init(
@@ -447,13 +662,34 @@ struct ContractRevision: Codable, Hashable, Identifiable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(String.self, forKey: .id)
+        id = try container.decodeIfPresent(String.self, forKey: .id)
+            ?? container.decodeIfPresent(String.self, forKey: .revisionId)
+            ?? container.decodeIfPresent(String.self, forKey: .revisionIdSnake)
+            ?? UUID().uuidString
         blockId = try container.decodeIfPresent(String.self, forKey: .blockId)
+            ?? container.decodeIfPresent(String.self, forKey: .blockIdSnake)
         riskId = try container.decodeIfPresent(String.self, forKey: .riskId)
-        beforeText = try container.decode(String.self, forKey: .beforeText)
-        afterText = try container.decode(String.self, forKey: .afterText)
-        status = try container.decodeIfPresent(RevisionState.self, forKey: .status) ?? .confirmed
+            ?? container.decodeIfPresent(String.self, forKey: .riskIdSnake)
+        beforeText = try container.decodeIfPresent(String.self, forKey: .beforeText)
+            ?? container.decodeIfPresent(String.self, forKey: .beforeTextSnake)
+            ?? ""
+        afterText = try container.decodeIfPresent(String.self, forKey: .afterText)
+            ?? container.decodeIfPresent(String.self, forKey: .afterTextSnake)
+            ?? ""
+        status = (try? container.decodeIfPresent(RevisionState.self, forKey: .status)) ?? .confirmed
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt)
+            ?? container.decodeIfPresent(Date.self, forKey: .createdAtSnake)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encodeIfPresent(blockId, forKey: .blockId)
+        try container.encodeIfPresent(riskId, forKey: .riskId)
+        try container.encode(beforeText, forKey: .beforeText)
+        try container.encode(afterText, forKey: .afterText)
+        try container.encode(status, forKey: .status)
+        try container.encodeIfPresent(createdAt, forKey: .createdAt)
     }
 
     /// 转换为前端的 LocalRevision
@@ -1146,6 +1382,7 @@ enum RevisionState: String, Codable, Hashable {
     case original
     case draft
     case confirmed
+    case applied
 }
 
 /// 审查立场：甲方视角 / 乙方视角 / 中立角度

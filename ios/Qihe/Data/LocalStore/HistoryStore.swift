@@ -242,7 +242,8 @@ final class JobPollingStore: ObservableObject {
             return
         }
         do {
-            let job = try await apiClient.pollJob(jobId: jobId)
+            var job = try await apiClient.pollJob(jobId: jobId)
+            job.mode = job.mode ?? currentJob?.mode
             currentJob = job
             currentStep = job.step ?? defaultStep(for: job.status, mode: job.mode)
             switch job.status {
