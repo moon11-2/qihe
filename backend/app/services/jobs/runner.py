@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import logging
 
 from app.models.contracts import ContractRunRequest
 from app.services.billing.quota import CREDIT_COST_GENERATE, CREDIT_COST_REVIEW, deduct_credits
@@ -11,15 +13,17 @@ from app.services.contracts.review import run_review
 from app.services.jobs import store as job_store
 
 
+logger = logging.getLogger(__name__)
+
+
 async def execute_job(job_id: str) -> None:
     """Execute a contract job in the background."""
-    job = job_store.get_job(job_id)
+    job = job_store.claim_queued_job(job_id)
     if not job:
         return
 
     try:
         owner_user_id = int(job["owner_user_id"])
-        job_store.update_job_status(job_id, "running", progress=10, current_step="parsing")
         job_store.update_job_step(job_id, "parsing", "running")
 
         # Build request from job data
@@ -60,13 +64,23 @@ async def execute_job(job_id: str) -> None:
             )
         except ValueError as exc:
             code = "insufficient_credits" if str(exc) == "insufficient_credits" else "credit_deduction_failed"
-            job_store.set_job_error(job_id, code, "积分扣除失败，请稍后重试")
+            logger.warning(
+                "job credit deduction failed [job_ref=%s error_code=%s]",
+                _job_log_ref(job_id),
+                code,
+            )
+            job_store.set_job_error(job_id, code)
             return
 
         job_store.set_job_result(job_id, {"type": f"{job['mode']}_result", **result_dict})
 
     except Exception as exc:
-        job_store.set_job_error(job_id, "job_execution_failed", str(exc))
+        logger.error(
+            "job execution failed [job_ref=%s exception_type=%s]",
+            _job_log_ref(job_id),
+            type(exc).__name__,
+        )
+        job_store.set_job_error(job_id, "job_execution_failed")
 
 
 def start_job_background(job_id: str) -> None:
@@ -76,3 +90,7 @@ def start_job_background(job_id: str) -> None:
         loop.create_task(execute_job(job_id))
     except RuntimeError:
         asyncio.run(execute_job(job_id))
+
+
+def _job_log_ref(job_id: str) -> str:
+    return hashlib.sha256(job_id.encode("utf-8", errors="replace")).hexdigest()[:12]

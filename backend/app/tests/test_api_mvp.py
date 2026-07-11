@@ -265,6 +265,7 @@ def test_chat_response_shapes(tmp_path: Path, monkeypatch) -> None:
     )
     assert chat_response.status_code == 200
     assert chat_response.json()["type"] == "chat"
+    assert "小契" in chat_response.json()["reply"]
 
 
 def test_contract_run_review_and_generate_shapes(tmp_path: Path, monkeypatch) -> None:

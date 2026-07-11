@@ -103,7 +103,8 @@ final class HistoryStore: ObservableObject {
     func saveGenerate(
         requestText: String,
         attachment: UploadedFile?,
-        result: GenerateResult
+        result: GenerateResult,
+        sourceChatRecordId: UUID? = nil
     ) -> UUID {
         let record = HistoryRecord(
             type: .generate,
@@ -113,7 +114,8 @@ final class HistoryStore: ObservableObject {
             generatePayload: GenerateHistoryPayload(
                 requestText: requestText,
                 attachment: attachment,
-                result: result
+                result: result,
+                sourceChatRecordId: sourceChatRecordId
             )
         )
         upsert(record)
@@ -198,12 +200,24 @@ final class JobPollingStore: ObservableObject {
     private var pollCount = 0
     private let maxPolls = 200
     private let interval: TimeInterval = 1.5
+    private var pendingRequestText = ""
+    private var pendingAttachment: UploadedFile?
+    private var pendingSourceChatRecordId: UUID?
 
     var apiClient: APIClient?
     var historyStore: HistoryStore?
 
-    func startPolling(jobId: String, mode: ContractMode) {
+    func startPolling(
+        jobId: String,
+        mode: ContractMode,
+        requestText: String? = nil,
+        attachment: UploadedFile? = nil,
+        sourceChatRecordId: UUID? = nil
+    ) {
         stopPolling()
+        pendingRequestText = requestText?.trimmedForInput ?? ""
+        pendingAttachment = attachment
+        pendingSourceChatRecordId = sourceChatRecordId
         currentJob = ContractJob(id: jobId, status: .queued, mode: mode)
         currentStep = mode == .review ? "正在提交审查..." : "正在提交生成..."
         errorMessage = nil
@@ -225,6 +239,9 @@ final class JobPollingStore: ObservableObject {
         currentJob = nil
         currentStep = ""
         errorMessage = nil
+        pendingRequestText = ""
+        pendingAttachment = nil
+        pendingSourceChatRecordId = nil
     }
 
     private func schedulePoll() {
@@ -280,13 +297,22 @@ final class JobPollingStore: ObservableObject {
         switch mode {
         case .review:
             guard let result = job.reviewResult else { await finishWithError("审查结果异常。"); return }
-            recordId = historyStore.saveReview(requestText: "", attachment: nil, result: result)
+            recordId = historyStore.saveReview(
+                requestText: pendingRequestText,
+                attachment: pendingAttachment,
+                result: result
+            )
         case .generate:
             guard let result = job.generateResult else { await finishWithError("生成结果异常。"); return }
-            recordId = historyStore.saveGenerate(requestText: "", attachment: nil, result: result)
+            recordId = historyStore.saveGenerate(
+                requestText: pendingRequestText,
+                attachment: pendingAttachment,
+                result: result,
+                sourceChatRecordId: pendingSourceChatRecordId
+            )
         }
-        completedRecordId = recordId
         completedMode = mode
+        completedRecordId = recordId
     }
 
     private func finishWithError(_ message: String) async {

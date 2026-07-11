@@ -61,11 +61,6 @@ async def _create_job(
     if not check_balance(owner_user_id, cost):
         raise api_error(402, "insufficient_credits", f"积分不足，需要 {cost} 积分")
 
-    # Check concurrency: max 1 running job per user
-    running = job_store.get_running_job_for_user(owner_user_id)
-    if running:
-        raise api_error(409, "job_in_progress", "已有正在执行的任务，请等待完成后再提交")
-
     source_text = request.text or ""
     job_id = f"job_{uuid4().hex[:12]}"
 
@@ -73,15 +68,18 @@ async def _create_job(
     if review_perspective is None and request.metadata.get("review_perspective") in {"party_a", "party_b", "neutral"}:
         review_perspective = str(request.metadata["review_perspective"])
 
-    job_store.create_job(
-        job_id=job_id,
-        owner_user_id=owner_user_id,
-        mode=mode,
-        source_text=source_text,
-        file_id=request.file_id,
-        review_perspective=review_perspective,
-        metadata=request.metadata,
-    )
+    try:
+        job_store.create_job(
+            job_id=job_id,
+            owner_user_id=owner_user_id,
+            mode=mode,
+            source_text=source_text,
+            file_id=request.file_id,
+            review_perspective=review_perspective,
+            metadata=request.metadata,
+        )
+    except job_store.ActiveJobExistsError as exc:
+        raise api_error(409, "job_in_progress", "已有正在执行的任务，请等待完成后再提交") from exc
 
     # Launch background execution
     start_job_background(job_id)

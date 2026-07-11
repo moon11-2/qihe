@@ -10,6 +10,8 @@ struct HomeView: View {
     @State private var isFileImporterPresented = false
     @State private var isUploading = false
     @State private var uploadError: String?
+    @State private var uploadCharacterCount: Int?
+    @State private var pendingUploadFilename: String?
     @FocusState private var isPromptFocused: Bool
 
     /// 任务六：积分余额与不足引导
@@ -19,24 +21,38 @@ struct HomeView: View {
 
     var body: some View {
         ZStack {
-            QiheColor.paper.ignoresSafeArea()
+            HomeReferenceStyle.pageBackground
+                .ignoresSafeArea()
                 .onTapGesture {
                     isPromptFocused = false
                     QiheKeyboard.dismiss()
                 }
 
+            Circle()
+                .fill(HomeReferenceStyle.topGlow)
+                .frame(width: 260, height: 260)
+                .offset(x: 154, y: -284)
+                .allowsHitTesting(false)
+
+            Circle()
+                .fill(HomeReferenceStyle.sideGlow)
+                .frame(width: 210, height: 210)
+                .offset(x: -190, y: 82)
+                .allowsHitTesting(false)
+
             ScrollView {
-                VStack(spacing: 20) {
+                VStack(spacing: 16) {
                     brandTopBar
                     heroStatement
+                    coreActions
                     chatEntry
                     uploadRecommendation
-                    coreActions
                     recentRecords
+                    capabilityMatrix
                     healthLine
                 }
                 .padding(.horizontal, 20)
-                .padding(.top, 8)
+                .padding(.top, 10)
                 .padding(.bottom, QiheLayout.rootTabBottomInset)
             }
             .qiheScrollDismissesKeyboard()
@@ -68,236 +84,367 @@ struct HomeView: View {
 
     private var brandTopBar: some View {
         HStack(alignment: .center) {
-            QiheBrandLockup(markSize: 36, titleSize: 22)
+            HStack(spacing: 10) {
+                QiheLogoMark(size: 36)
+
+                Text("契合")
+                    .font(QiheFont.h2(size: 21, weight: .bold))
+                    .tracking(2)
+                    .foregroundStyle(HomeReferenceStyle.ink)
+                    .lineLimit(1)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("契合")
 
             Spacer(minLength: 12)
 
-            QiheSloganLockup(compact: true)
+            Button {
+                isPromptFocused = false
+                QiheKeyboard.dismiss()
+                if !authStore.status.isSignedIn {
+                    authStore.requestSignIn()
+                }
+                appState.selectedTab = .profile
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(QiheColor.glassFill)
+
+                    if let avatarInitial {
+                        Text(avatarInitial)
+                            .font(QiheFont.body(size: 14, weight: .bold))
+                            .foregroundStyle(QiheColor.brandBlue)
+                            .lineLimit(1)
+                    } else {
+                        Image(systemName: "person.crop.circle")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(QiheColor.brandBlue)
+                    }
+                }
+                .frame(width: 34, height: 34)
+                .overlay(
+                    Circle()
+                        .stroke(Color.white.opacity(0.92), lineWidth: 1)
+                )
+                .shadow(color: HomeReferenceStyle.blue.opacity(0.14), radius: 10, x: 0, y: 4)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("打开个人中心")
         }
-        .padding(.top, 4)
     }
 
     private var heroStatement: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("今天要处理哪份合同？")
-                .font(QiheFont.title(size: 27))
-                .foregroundStyle(QiheColor.ink)
-                .lineLimit(1)
-                .minimumScaleFactor(0.82)
+        HStack(alignment: .top, spacing: 4) {
+            VStack(alignment: .leading, spacing: 0) {
+                Label("专属法务助手", systemImage: "sparkles")
+                    .font(QiheFont.body(size: 14, weight: .bold))
+                    .foregroundStyle(HomeReferenceStyle.tealDeep)
+                    .padding(.horizontal, 13)
+                    .frame(height: 36)
+                    .background(
+                        LinearGradient(
+                            colors: [Color(hex: 0xDBF5F2), Color(hex: 0xE8F7EE)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .clipShape(Capsule())
+                    .overlay(Capsule().stroke(Color.white.opacity(0.92), lineWidth: 1))
+                    .shadow(color: HomeReferenceStyle.teal.opacity(0.12), radius: 8, x: 0, y: 4)
 
-            Text("输入、上传，或直接选择审查和生成。")
-                .font(QiheFont.body(size: 13))
-                .foregroundStyle(QiheColor.muted)
-                .lineLimit(1)
-                .minimumScaleFactor(0.86)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, 4)
-    }
+                Text("拟合同、审风险\n一句话就够了")
+                    .font(QiheFont.display(size: 27, weight: .black))
+                    .foregroundStyle(HomeReferenceStyle.ink)
+                    .lineSpacing(4)
+                    .minimumScaleFactor(0.88)
+                    .padding(.top, 14)
 
-    private var chatEntry: some View {
-        PaperCard(padding: 14) {
-            VStack(alignment: .leading, spacing: 13) {
-                HStack(spacing: 8) {
-                    QiheLogoMark(size: 20)
-
-                    Text("契合")
-                        .font(QiheFont.body(size: 13, weight: .semibold))
-                        .foregroundStyle(QiheColor.navy)
-
-                    Spacer(minLength: 0)
-                }
-
-                TextField("输入合同内容，或描述你想生成的合同……", text: $prompt, axis: .vertical)
-                    .font(QiheFont.body(size: 16))
-                    .foregroundStyle(QiheColor.ink)
-                    .lineLimit(2...5)
-                    .frame(minHeight: 60, alignment: .topLeading)
-                    .focused($isPromptFocused)
-
-                HStack {
-                    Text(uploadedFile == nil ? "可粘贴文本，也可上传 PDF / Word / TXT" : "已上传文件，可进入审查")
-                        .font(QiheFont.caption(size: 11.5, weight: .medium))
-                        .foregroundStyle(QiheColor.muted)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.78)
-
-                    Spacer()
-
-                    HStack(spacing: 8) {
-                        QiheIconCircleButton(
-                            systemImage: "plus",
-                            accessibilityLabel: "上传文件",
-                            size: 34,
-                            isLoading: isUploading,
-                            isDisabled: isUploading
-                        ) {
-                            guard requireSignIn() else {
-                                return
-                            }
-                            isFileImporterPresented = true
-                        }
-
-                        QiheIconCircleButton(
-                            systemImage: "arrow.up",
-                            accessibilityLabel: "发送",
-                            size: 34,
-                            isPrimary: true,
-                            isDisabled: !canSendPrompt
-                        ) {
-                            sendPrompt()
-                        }
-                    }
-                }
+                Text("专业严谨、全程加密")
+                    .font(QiheFont.body(size: 14))
+                    .foregroundStyle(HomeReferenceStyle.muted)
+                    .padding(.top, 10)
             }
+
+            Spacer(minLength: 0)
+
+            HomeAssistantMascot()
+                .frame(width: 108, height: 154)
         }
+        .frame(maxWidth: .infinity, minHeight: 166, alignment: .topLeading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("专属法务助手小契。拟合同、审风险，一句话就够了。专业严谨、全程加密。")
     }
 
     private var coreActions: some View {
-        PaperCard(padding: 14) {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("核心入口")
-                    .font(QiheFont.body(size: 15, weight: .semibold))
-                    .foregroundStyle(QiheColor.ink)
+        HStack(spacing: 10) {
+            HomeFeatureCard(
+                title: "拟定合同",
+                subtitle: "一句话生成合同",
+                cost: "3 积分",
+                systemImage: "doc.badge.plus",
+                isPrimary: true
+            ) {
+                guard requireSignIn() else { return }
+                guard requireCredits(3, action: "生成合同") else { return }
+                isPromptFocused = false
+                QiheKeyboard.dismiss()
+                appState.path.append(.generate(prefill: nil))
+            }
 
-                HStack(spacing: 12) {
-                    Button {
-                        guard requireSignIn() else { return }
-                        guard requireCredits(2, action: "审查合同") else { return }
-                        isPromptFocused = false
-                        QiheKeyboard.dismiss()
-                        appState.path.append(.review(prefill: nil))
-                    } label: {
-                        VStack(spacing: 3) {
-                            Text("合同审查")
-                                .font(QiheFont.body(size: 15, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .lineLimit(1)
-                            Text("消耗 2 积分")
-                                .font(QiheFont.caption(size: 10))
-                                .foregroundStyle(.white.opacity(0.65))
-                        }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 42)
-                        .background(QiheColor.navy)
-                        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        guard requireSignIn() else { return }
-                        guard requireCredits(3, action: "生成合同") else { return }
-                        isPromptFocused = false
-                        QiheKeyboard.dismiss()
-                        appState.path.append(.generate(prefill: nil))
-                    } label: {
-                        VStack(spacing: 3) {
-                            Text("合同生成")
-                                .font(QiheFont.body(size: 15, weight: .semibold))
-                                .foregroundStyle(QiheColor.ink)
-                                .lineLimit(1)
-                            Text("消耗 3 积分")
-                                .font(QiheFont.caption(size: 10))
-                                .foregroundStyle(QiheColor.muted)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 42)
-                        .background(QiheColor.paper)
-                        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous)
-                                .stroke(QiheColor.lineStrong, lineWidth: 1)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                HStack(spacing: 6) {
-                    Image(systemName: "checkmark.shield")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(QiheColor.navy)
-
-                    Text("逐条审查 · 标注法条依据 · 历史仅本地保存")
-                        .font(QiheFont.caption(size: 11))
-                        .foregroundStyle(QiheColor.muted)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.82)
-                }
+            HomeFeatureCard(
+                title: "审查合同",
+                subtitle: "上传文件标注风险",
+                cost: "2 积分",
+                systemImage: "checkmark.shield",
+                isPrimary: false
+            ) {
+                guard requireSignIn() else { return }
+                guard requireCredits(2, action: "审查合同") else { return }
+                isPromptFocused = false
+                QiheKeyboard.dismiss()
+                appState.path.append(.review(prefill: nil))
             }
         }
+    }
+
+    private var chatEntry: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            TextField("描述合同需求，或上传文件", text: $prompt, axis: .vertical)
+                .font(QiheFont.body(size: 15))
+                .foregroundStyle(HomeReferenceStyle.ink)
+                .tint(HomeReferenceStyle.blue)
+                .lineLimit(1...3)
+                .frame(minHeight: 48, alignment: .topLeading)
+                .focused($isPromptFocused)
+
+            inputButtons
+        }
+        .padding(.horizontal, 15)
+        .padding(.vertical, 14)
+        .background(Color.white.opacity(0.78))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(Color.white.opacity(0.96), lineWidth: 1.5)
+        )
+        .shadow(color: HomeReferenceStyle.blue.opacity(0.15), radius: 18, x: 0, y: 10)
+    }
+
+    private var uploadFormatHint: some View {
+        Text(isUploading ? "正在上传并解析文件…" : "PDF、DOCX、TXT · 最大 20MB")
+            .font(QiheFont.caption(size: 12.5))
+            .foregroundStyle(HomeReferenceStyle.subtle)
+            .lineLimit(1)
+            .minimumScaleFactor(0.72)
+    }
+
+    private var inputButtons: some View {
+        HStack(spacing: 9) {
+            HomeInputIconButton(
+                systemImage: "plus",
+                accessibilityLabel: "上传文件",
+                isLoading: isUploading,
+                isDisabled: isUploading,
+                isPrimary: false
+            ) {
+                guard requireSignIn() else {
+                    return
+                }
+                isFileImporterPresented = true
+            }
+
+            uploadFormatHint
+
+            Spacer(minLength: 0)
+
+            HomeInputIconButton(
+                systemImage: "arrow.up",
+                accessibilityLabel: "发送",
+                isDisabled: !canSendPrompt,
+                isPrimary: true
+            ) {
+                sendPrompt()
+            }
+        }
+    }
+
+    private var capabilityMatrix: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HomeSectionTitle(title: "契合能帮你做什么")
+
+            LazyVGrid(columns: capabilityColumns, spacing: 0) {
+                HomeCapabilityCell(
+                    title: "智能起草",
+                    detail: "生成条款完整的合同",
+                    systemImage: "pencil.and.scribble",
+                    tint: HomeReferenceStyle.blue
+                )
+                HomeCapabilityCell(
+                    title: "风险审查",
+                    detail: "逐条标注不利条款",
+                    systemImage: "checkmark.shield",
+                    tint: HomeReferenceStyle.teal
+                )
+                HomeCapabilityCell(
+                    title: "条款解读",
+                    detail: "大白话解释术语",
+                    systemImage: "bubble.left",
+                    tint: Color(hex: 0x6366F1)
+                )
+                HomeCapabilityCell(
+                    title: "合规校验",
+                    detail: "对照法规查漏补缺",
+                    systemImage: "checkmark.circle",
+                    tint: Color(hex: 0x16A34A)
+                )
+            }
+            .background(Color.white.opacity(0.52))
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.white.opacity(0.88), lineWidth: 1)
+            )
+            .shadow(color: HomeReferenceStyle.blue.opacity(0.06), radius: 12, x: 0, y: 5)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var capabilityColumns: [GridItem] {
+        [
+            GridItem(.flexible(), spacing: 0),
+            GridItem(.flexible(), spacing: 0)
+        ]
+    }
+
+    private var avatarInitial: String? {
+        guard case let .signedIn(user) = authStore.status else {
+            return nil
+        }
+        let seed = user.displayName.nilIfBlank ?? user.account.nilIfBlank ?? "我"
+        return String(seed.prefix(1)).uppercased()
     }
 
     @ViewBuilder
     private var uploadRecommendation: some View {
-        if let uploadError {
-            ErrorBanner(message: uploadError, retryTitle: nil, retry: nil)
-        } else if let uploadedFile {
-            PaperCard(padding: 12) {
-                HStack(spacing: 10) {
-                    Image(systemName: "doc.text")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(QiheColor.navy)
-                        .frame(width: 34, height: 34)
-                        .background(QiheColor.navySoft)
-                        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
+        VStack(spacing: 8) {
+            if isUploading {
+                QiheGlassCard(padding: 12, cornerRadius: QiheRadius.card) {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                            .tint(QiheColor.brandBlue)
+                            .frame(width: 34, height: 34)
+                            .background(QiheColor.infoBlueSoft)
+                            .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
 
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(uploadedFile.filename)
-                            .font(QiheFont.body(size: 14, weight: .semibold))
-                            .foregroundStyle(QiheColor.ink)
-                            .lineLimit(1)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(pendingUploadFilename ?? "合同文件")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(QiheColor.ink)
+                                .lineLimit(1)
 
-                        Text("已上传，建议进入合同审查")
-                            .font(QiheFont.caption(size: 12))
-                            .foregroundStyle(QiheColor.muted)
-                    }
-
-                    Spacer()
-
-                    Button("审查") {
-                        guard requireSignIn() else {
-                            return
+                            Text("正在上传并解析文件…")
+                                .font(.caption)
+                                .foregroundStyle(QiheColor.muted)
                         }
-                        let file = uploadedFile
-                        self.uploadedFile = nil
-                        uploadError = nil
-                        isPromptFocused = false
-                        QiheKeyboard.dismiss()
-                        appState.path.append(.review(prefill: nil, attachment: file))
+
+                        Spacer(minLength: 8)
+
+                        QiheStatusPill(
+                            text: "上传中",
+                            color: QiheColor.brandBlue,
+                            background: QiheColor.infoBlueSoft
+                        )
                     }
-                    .font(QiheFont.caption(size: 12, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 12)
-                    .frame(height: 30)
-                    .background(QiheColor.navy)
-                    .clipShape(RoundedRectangle(cornerRadius: QiheRadius.xs, style: .continuous))
+                }
+            }
+
+            if let uploadError {
+                ErrorBanner(message: uploadError, retryTitle: nil, retry: nil)
+            }
+
+            if let uploadedFile {
+                QiheGlassCard(padding: 12, cornerRadius: QiheRadius.card) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 19, weight: .semibold))
+                            .foregroundStyle(QiheColor.safeGreen)
+                            .frame(width: 34, height: 34)
+                            .background(QiheColor.safeGreenSoft)
+                            .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(uploadedFile.filename)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(QiheColor.ink)
+                                .lineLimit(1)
+
+                            Text(uploadedFileDetail)
+                                .font(.caption)
+                                .foregroundStyle(QiheColor.muted)
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        Spacer(minLength: 8)
+
+                        Button("审查") {
+                            guard requireSignIn() else {
+                                return
+                            }
+                            let file = uploadedFile
+                            self.uploadedFile = nil
+                            uploadError = nil
+                            isPromptFocused = false
+                            QiheKeyboard.dismiss()
+                            appState.path.append(.review(prefill: nil, attachment: file))
+                        }
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .frame(minHeight: 32)
+                        .background {
+                            RoundedRectangle(cornerRadius: QiheRadius.xs, style: .continuous)
+                                .fill(QiheColor.primaryGradient)
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.xs, style: .continuous))
+                    }
                 }
             }
         }
     }
 
+    private var uploadedFileDetail: String {
+        if let uploadCharacterCount {
+            return "\(uploadCharacterCount.formatted()) 字符 · 将按文件全文审查"
+        }
+        return "已上传 · 将按文件全文审查"
+    }
+
     private var recentRecords: some View {
-        VStack(spacing: 0) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("最近记录")
-                    .font(QiheFont.title(size: 15))
-                    .foregroundStyle(QiheColor.ink)
+        VStack(spacing: 12) {
+            HStack(alignment: .center) {
+                HomeSectionTitle(title: "最近记录")
 
                 Spacer()
 
-                Button("展开") {
+                Button {
                     isPromptFocused = false
                     QiheKeyboard.dismiss()
                     appState.selectedTab = .history
+                } label: {
+                    HStack(spacing: 3) {
+                        Text(historyStore.records.isEmpty ? "暂无记录" : "共 " + String(historyStore.records.count) + " 份")
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9, weight: .bold))
+                    }
                 }
-                .font(QiheFont.caption(size: 12, weight: .medium))
-                .foregroundStyle(QiheColor.navy)
+                .font(QiheFont.caption(size: 13, weight: .medium))
+                .foregroundStyle(historyStore.records.isEmpty ? HomeReferenceStyle.subtle : HomeReferenceStyle.blue)
                 .disabled(historyStore.records.isEmpty)
             }
-            .padding(.bottom, 8)
 
             if historyStore.records.isEmpty {
-                PaperCard(padding: 14) {
+                QiheGlassCard(padding: 14, cornerRadius: QiheRadius.card) {
                     EmptyStateView(
                         title: "暂无最近记录",
                         detail: "从对话、审查或生成开始后，本地历史会出现在这里。"
@@ -305,12 +452,10 @@ struct HomeView: View {
                     .padding(.vertical, 2)
                 }
             } else {
-                PaperCard(padding: 0) {
-                    VStack(spacing: 0) {
-                        ForEach(Array(historyStore.records.prefix(3))) { record in
-                            HomeRecentRecordRow(record: record) {
-                                appState.openHistoryRecord(record)
-                            }
+                VStack(spacing: 8) {
+                    ForEach(Array(historyStore.records.prefix(3))) { record in
+                        HomeRecentRecordRow(record: record) {
+                            appState.openHistoryRecord(record)
                         }
                     }
                 }
@@ -322,11 +467,11 @@ struct HomeView: View {
         HStack(spacing: 6) {
             Circle()
                 .fill(healthState.color)
-                .frame(width: 7, height: 7)
+                .frame(width: 6, height: 6)
 
             Text(healthState.compactDetail(baseURL: appState.apiClient.baseURL))
-                .font(QiheFont.caption(size: 11))
-                .foregroundStyle(QiheColor.muted)
+                .font(QiheFont.caption(size: 10.5))
+                .foregroundStyle(QiheColor.neutral600.opacity(0.68))
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
 
@@ -340,10 +485,12 @@ struct HomeView: View {
                 Image(systemName: "arrow.clockwise")
                     .font(.system(size: 12, weight: .medium))
             }
-            .foregroundStyle(QiheColor.navy)
+            .foregroundStyle(QiheColor.brandBlue.opacity(0.72))
             .disabled(healthState == .checking)
         }
-        .padding(.top, -2)
+        .padding(.horizontal, 2)
+        .padding(.top, -4)
+        .opacity(0.82)
     }
 
     private var canSendPrompt: Bool {
@@ -390,12 +537,23 @@ struct HomeView: View {
         }
         isUploading = true
         uploadError = nil
-        uploadedFile = nil
-        defer { isUploading = false }
+        pendingUploadFilename = url.lastPathComponent
+        let characterCountTask = Task.detached(priority: .utility) {
+            QiheLocalDocumentMetrics.characterCount(at: url)
+        }
+        defer {
+            isUploading = false
+            pendingUploadFilename = nil
+        }
 
         do {
-            uploadedFile = try await appState.apiClient.uploadFile(from: url)
+            let file = try await appState.apiClient.uploadFile(from: url)
+            let characterCount = await characterCountTask.value
+            uploadedFile = file
+            uploadCharacterCount = characterCount
+            QiheUploadPresentationCache.store(characterCount: characterCount, for: file)
         } catch {
+            characterCountTask.cancel()
             uploadError = error.qiheDisplayMessage
         }
     }
@@ -451,53 +609,427 @@ struct HomeView: View {
     }
 }
 
+private enum HomeReferenceStyle {
+    static let blue = Color(hex: 0x2563EB)
+    static let teal = Color(hex: 0x0891B2)
+    static let tealDeep = Color(hex: 0x0E7490)
+    static let ink = Color(hex: 0x14203A)
+    static let muted = Color(hex: 0x64748B)
+    static let subtle = Color(hex: 0x94A3B8)
+
+    static let pageBackground = LinearGradient(
+        colors: [Color(hex: 0xDFEAFF), Color(hex: 0xF5F9FF)],
+        startPoint: .top,
+        endPoint: .bottom
+    )
+
+    static let topGlow = RadialGradient(
+        colors: [Color.white.opacity(0.92), Color(hex: 0x93C5FD).opacity(0.48), .clear],
+        center: .topLeading,
+        startRadius: 0,
+        endRadius: 132
+    )
+
+    static let sideGlow = RadialGradient(
+        colors: [Color(hex: 0x60A5FA).opacity(0.18), .clear],
+        center: .center,
+        startRadius: 0,
+        endRadius: 105
+    )
+}
+
+private struct HomeSectionTitle: View {
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Color(hex: 0x3B82F6), Color(hex: 0x38BDF8)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .frame(width: 3, height: 15)
+
+            Text(title)
+                .font(QiheFont.body(size: 15, weight: .bold))
+                .foregroundStyle(HomeReferenceStyle.ink)
+                .lineLimit(1)
+        }
+    }
+}
+
+private struct HomeInputIconButton: View {
+    let systemImage: String
+    let accessibilityLabel: String
+    var isLoading = false
+    var isDisabled = false
+    var isPrimary = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                if isLoading {
+                    ProgressView()
+                        .tint(isPrimary ? .white : HomeReferenceStyle.blue)
+                } else {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 18, weight: .semibold))
+                }
+            }
+            .frame(width: 40, height: 40)
+            .foregroundStyle(isPrimary ? Color.white : HomeReferenceStyle.blue)
+            .background {
+                if isPrimary {
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color(hex: 0x3B82F6), HomeReferenceStyle.blue],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                } else {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.white.opacity(0.86))
+                }
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: isPrimary ? 13 : 12, style: .continuous)
+                    .stroke(isPrimary ? .clear : HomeReferenceStyle.blue.opacity(0.20), lineWidth: 1)
+            )
+            .shadow(color: isPrimary ? HomeReferenceStyle.blue.opacity(0.30) : .clear, radius: 7, x: 0, y: 4)
+            .opacity(isDisabled ? 0.48 : 1)
+        }
+        .buttonStyle(.plain)
+        .disabled(isDisabled || isLoading)
+        .accessibilityLabel(accessibilityLabel)
+    }
+}
+
+/// 正式角色素材交付前的 SwiftUI 占位，不截取参考稿位图。
+private struct HomeAssistantMascot: View {
+    var body: some View {
+        ZStack(alignment: .top) {
+            Ellipse()
+                .fill(HomeReferenceStyle.blue.opacity(0.15))
+                .frame(width: 62, height: 10)
+                .blur(radius: 3)
+                .offset(y: 140)
+
+            Capsule()
+                .fill(
+                    LinearGradient(
+                        colors: [Color(hex: 0xCFE1FF), Color(hex: 0x6EA3F5)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .frame(width: 9, height: 23)
+                .rotationEffect(.degrees(20))
+                .offset(x: -48, y: 91)
+
+            Capsule()
+                .fill(
+                    LinearGradient(
+                        colors: [Color(hex: 0xCFE1FF), Color(hex: 0x6EA3F5)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .frame(width: 9, height: 23)
+                .rotationEffect(.degrees(-20))
+                .offset(x: 48, y: 91)
+
+            ZStack {
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                .white,
+                                Color(hex: 0xD3E7FF),
+                                Color(hex: 0x8FBCFF),
+                                Color(hex: 0x4A86EE),
+                                Color(hex: 0x2F63D4)
+                            ],
+                            center: UnitPoint(x: 0.31, y: 0.23),
+                            startRadius: 0,
+                            endRadius: 72
+                        )
+                    )
+                    .shadow(color: Color(hex: 0x2B62D4).opacity(0.34), radius: 17, x: 0, y: 12)
+
+                Ellipse()
+                    .fill(Color.white.opacity(0.58))
+                    .frame(width: 32, height: 16)
+                    .blur(radius: 4)
+                    .offset(x: -18, y: -27)
+
+                HStack(spacing: 16) {
+                    mascotEye
+                    mascotEye
+                }
+                .offset(y: -5)
+
+                HStack(spacing: 37) {
+                    Ellipse()
+                        .fill(Color(hex: 0xFF7890).opacity(0.42))
+                        .frame(width: 11, height: 6)
+                    Ellipse()
+                        .fill(Color(hex: 0xFF7890).opacity(0.42))
+                        .frame(width: 11, height: 6)
+                }
+                .blur(radius: 0.8)
+                .offset(y: 14)
+
+                Path { path in
+                    path.move(to: CGPoint(x: 1, y: 1))
+                    path.addQuadCurve(
+                        to: CGPoint(x: 21, y: 1),
+                        control: CGPoint(x: 11, y: 13)
+                    )
+                }
+                .stroke(Color(hex: 0x17264A), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                .frame(width: 22, height: 12)
+                .offset(y: 18)
+            }
+            .frame(width: 96, height: 96)
+            .offset(y: 42)
+
+            Image(systemName: "sparkle")
+                .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(Color(hex: 0x7FB0FF))
+                .shadow(color: HomeReferenceStyle.blue.opacity(0.38), radius: 4)
+                .offset(x: 37, y: 33)
+
+            Text("你好，我是小契~")
+                .font(QiheFont.caption(size: 12.5, weight: .semibold))
+                .foregroundStyle(Color(hex: 0x1E40AF))
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .padding(.horizontal, 10)
+                .frame(height: 31)
+                .background(Color.white)
+                .clipShape(
+                    UnevenRoundedRectangle(
+                        topLeadingRadius: 12,
+                        bottomLeadingRadius: 3,
+                        bottomTrailingRadius: 12,
+                        topTrailingRadius: 12,
+                        style: .continuous
+                    )
+                )
+                .shadow(color: HomeReferenceStyle.blue.opacity(0.20), radius: 8, x: 0, y: 4)
+                .offset(x: -16, y: 0)
+        }
+        .accessibilityHidden(true)
+    }
+
+    private var mascotEye: some View {
+        ZStack(alignment: .topLeading) {
+            Ellipse()
+                .fill(Color.white)
+                .frame(width: 15, height: 18)
+
+            Ellipse()
+                .fill(Color(hex: 0x17264A))
+                .frame(width: 8, height: 10)
+                .offset(x: 4, y: 4)
+
+            Circle()
+                .fill(Color.white)
+                .frame(width: 3, height: 3)
+                .offset(x: 6, y: 5)
+        }
+        .frame(width: 15, height: 18)
+    }
+}
+
+private struct HomeFeatureCard: View {
+    let title: String
+    let subtitle: String
+    let cost: String
+    let systemImage: String
+    let isPrimary: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            ZStack(alignment: .bottomTrailing) {
+                Image(systemName: isPrimary ? "doc.text" : "checkmark.shield")
+                    .font(.system(size: 82, weight: .ultraLight))
+                    .foregroundStyle(accent.opacity(0.09))
+                    .offset(x: 20, y: 18)
+
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .center) {
+                        Image(systemName: systemImage)
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 50, height: 50)
+                            .background(iconGradient)
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .shadow(color: accent.opacity(0.36), radius: 10, x: 0, y: 6)
+
+                        Spacer(minLength: 6)
+
+                        Text(cost)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(accent)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                            .padding(.horizontal, 7)
+                            .frame(height: 22)
+                            .background(Color.white.opacity(0.58))
+                            .clipShape(RoundedRectangle(cornerRadius: QiheRadius.badge, style: .continuous))
+                    }
+
+                    Spacer(minLength: 14)
+
+                    Text(title)
+                        .font(QiheFont.body(size: 17, weight: .bold))
+                        .foregroundStyle(HomeReferenceStyle.ink)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.82)
+
+                    Text(subtitle)
+                        .font(QiheFont.body(size: 13.5))
+                        .foregroundStyle(HomeReferenceStyle.muted)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(spacing: 3) {
+                        Text(isPrimary ? "开始拟定" : "开始审查")
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .bold))
+                    }
+                    .font(QiheFont.body(size: 13.5, weight: .semibold))
+                    .foregroundStyle(accent)
+                    .padding(.top, 8)
+                }
+                .padding(18)
+                .frame(maxWidth: .infinity, minHeight: 166, alignment: .leading)
+            }
+            .background(cardGradient)
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(Color.white.opacity(0.95), lineWidth: 1)
+            )
+            .shadow(color: accent.opacity(0.15), radius: 18, x: 0, y: 10)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var accent: Color {
+        isPrimary ? HomeReferenceStyle.blue : HomeReferenceStyle.teal
+    }
+
+    private var iconGradient: LinearGradient {
+        LinearGradient(
+            colors: isPrimary
+                ? [Color(hex: 0x4C93FF), HomeReferenceStyle.blue]
+                : [Color(hex: 0x22C3D6), HomeReferenceStyle.teal],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    private var cardGradient: LinearGradient {
+        LinearGradient(
+            colors: isPrimary
+                ? [Color(hex: 0xD9E8FF), Color(hex: 0xF3F7FF)]
+                : [Color(hex: 0xCCF1F7), Color(hex: 0xF0FDFF)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+}
+
+private struct HomeCapabilityCell: View {
+    let title: String
+    let detail: String
+    let systemImage: String
+    let tint: Color
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: systemImage)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 34, height: 34)
+                .background(tint.opacity(0.11))
+                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(QiheFont.body(size: 13, weight: .bold))
+                    .foregroundStyle(HomeReferenceStyle.ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+
+                Text(detail)
+                    .font(QiheFont.caption(size: 10.5))
+                    .foregroundStyle(HomeReferenceStyle.muted)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.78)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, minHeight: 78, alignment: .leading)
+        .overlay(
+            RoundedRectangle(cornerRadius: 0)
+                .stroke(HomeReferenceStyle.blue.opacity(0.05), lineWidth: 0.5)
+        )
+    }
+}
+
 private struct HomeRecentRecordRow: View {
     let record: HistoryRecord
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 12) {
+            HStack(spacing: 13) {
                 Image(systemName: iconName)
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(QiheColor.inkSoft)
-                    .frame(width: 34, height: 36)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(iconColor)
+                    .frame(width: 44, height: 44)
+                    .background(iconBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(record.title.nilIfBlank ?? "未命名记录")
-                        .font(QiheFont.body(size: 13.5, weight: .semibold))
-                        .foregroundStyle(QiheColor.ink)
+                        .font(QiheFont.body(size: 15, weight: .semibold))
+                        .foregroundStyle(HomeReferenceStyle.ink)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.76)
 
                     Text(Self.dateFormatter.string(from: record.updatedAt))
                         .font(QiheFont.caption(size: 11))
-                        .foregroundStyle(QiheColor.muted)
+                        .foregroundStyle(HomeReferenceStyle.subtle)
+                        .lineLimit(1)
                 }
 
-                Spacer()
+                Spacer(minLength: 8)
 
-                Text(stampText)
-                    .font(QiheFont.title(size: 10))
-                    .foregroundStyle(stampColor)
-                    .padding(.horizontal, 8)
-                    .frame(minWidth: 42)
-                    .frame(height: 24)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: QiheRadius.xs, style: .continuous)
-                            .stroke(stampColor, lineWidth: 1)
-                    )
+                QiheRiskBadge(level: badgeLevel, text: badgeText)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
-            .contentShape(Rectangle())
+            .background(Color.white.opacity(0.78))
+            .clipShape(RoundedRectangle(cornerRadius: QiheRadius.card, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: QiheRadius.card, style: .continuous)
+                    .stroke(Color.white.opacity(0.92), lineWidth: 1)
+            )
+            .shadow(color: HomeReferenceStyle.blue.opacity(0.07), radius: 12, x: 0, y: 5)
+            .contentShape(RoundedRectangle(cornerRadius: QiheRadius.card, style: .continuous))
         }
         .buttonStyle(.plain)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(QiheColor.line)
-                .frame(height: 1)
-                .padding(.horizontal, 14)
-        }
     }
 
     private var iconName: String {
@@ -511,25 +1043,47 @@ private struct HomeRecentRecordRow: View {
         }
     }
 
-    private var stampText: String {
+    private var badgeText: String {
         switch record.type {
         case .chat:
             return "对话"
         case .review:
-            return "已审"
+            return "审查"
         case .generate:
-            return "草案"
+            return "拟定"
         }
     }
 
-    private var stampColor: Color {
+    private var badgeLevel: RiskLevel {
         switch record.type {
         case .chat:
-            return QiheColor.navy
+            return .unknown
         case .review:
-            return QiheColor.pine
+            return .medium
         case .generate:
-            return QiheColor.amber
+            return .unknown
+        }
+    }
+
+    private var iconColor: Color {
+        switch record.type {
+        case .chat:
+            return QiheColor.brandNavy
+        case .review:
+            return QiheColor.riskOrange
+        case .generate:
+            return QiheColor.brandBlue
+        }
+    }
+
+    private var iconBackground: Color {
+        switch record.type {
+        case .chat:
+            return QiheColor.brandFrost.opacity(0.34)
+        case .review:
+            return QiheColor.riskOrangeSoft
+        case .generate:
+            return QiheColor.infoBlueSoft
         }
     }
 
@@ -548,11 +1102,11 @@ private enum HealthState: Equatable {
     var color: Color {
         switch self {
         case .checking:
-            return QiheColor.amber
+            return QiheColor.riskOrange
         case .online:
-            return QiheColor.pine
+            return QiheColor.safeGreen
         case .offline:
-            return QiheColor.seal
+            return QiheColor.riskRed
         }
     }
 

@@ -30,7 +30,12 @@ struct ChatView: View {
 
     var body: some View {
         ZStack {
-            QiheColor.paper.ignoresSafeArea()
+            LinearGradient(
+                colors: [Color(hex: 0xE6F0FF), Color(hex: 0xF5FAFF)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
                 .onTapGesture {
                     isInputFocused = false
                     QiheKeyboard.dismiss()
@@ -39,8 +44,6 @@ struct ChatView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 14) {
-                        processCard
-
                         if messages.isEmpty {
                             emptyState
                         } else {
@@ -87,8 +90,12 @@ struct ChatView: View {
         .safeAreaInset(edge: .bottom) {
             composer
         }
-        .navigationTitle("过程对话")
+        .navigationTitle("小契 · 智能助手")
         .qiheInlineNavigationTitle()
+#if os(iOS)
+        .toolbarBackground(Color.white.opacity(0.74), for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+#endif
     }
 
     private var processCard: some View {
@@ -112,12 +119,7 @@ struct ChatView: View {
     }
 
     private var emptyState: some View {
-        PaperCard {
-            EmptyStateView(
-                title: "开始过程对话",
-                detail: "输入合同内容、审查问题或生成需求；契合会推荐进入审查或生成。"
-            )
-        }
+        ChatWelcomeBubble()
     }
 
     private var composer: some View {
@@ -135,45 +137,38 @@ struct ChatView: View {
             HStack(alignment: .bottom, spacing: 10) {
                 TextField("输入合同问题或处理目标", text: $input, axis: .vertical)
                     .font(QiheFont.body(size: 15))
-                    .foregroundStyle(QiheColor.ink)
+                    .foregroundStyle(Color(hex: 0x14203A))
+                    .tint(Color(hex: 0x2563EB))
                     .lineLimit(1...4)
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, 13)
                     .padding(.vertical, 10)
-                    .background(QiheColor.card)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .background(Color.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(QiheColor.line, lineWidth: 1)
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(Color(hex: 0x2563EB).opacity(0.08), lineWidth: 1)
                     )
+                    .shadow(color: Color(hex: 0x2563EB).opacity(0.08), radius: 8, x: 0, y: 3)
                     .focused($isInputFocused)
                     .disabled(isSending)
 
-                Button {
+                ChatSendButton(
+                    isLoading: isSending,
+                    isDisabled: !canSend
+                ) {
                     sendCurrentInput()
-                } label: {
-                    ZStack {
-                        if isSending {
-                            ProgressView()
-                                .tint(.white)
-                        } else {
-                            Image(systemName: "arrow.up")
-                                .font(.system(size: 16, weight: .bold))
-                        }
-                    }
-                    .frame(width: 42, height: 42)
-                    .foregroundStyle(.white)
-                    .background(canSend ? QiheColor.navy : QiheColor.muted)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
-                .buttonStyle(.plain)
-                .disabled(!canSend)
-                .accessibilityLabel(isSending ? "正在发送" : "发送")
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 10)
-        .padding(.bottom, 12)
-        .background(QiheColor.paper)
+        .padding(.top, 9)
+        .padding(.bottom, 10)
+        .background(Color.white.opacity(0.88))
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Color(hex: 0x2563EB).opacity(0.08))
+                .frame(height: 1)
+        }
     }
 
     private var canSend: Bool {
@@ -331,11 +326,13 @@ struct ChatView: View {
     }
 
     @MainActor
-    private func persistMessages() {
+    @discardableResult
+    private func persistMessages() -> UUID? {
         guard !messages.isEmpty else {
-            return
+            return nil
         }
         recordId = historyStore.saveChat(recordId: recordId, messages: messages)
+        return recordId
     }
 
     @MainActor
@@ -347,12 +344,17 @@ struct ChatView: View {
             return
         }
 
-        persistMessages()
+        let persistedChatRecordId = persistMessages()
         switch mode {
         case .review:
             appState.path.append(.review(prefill: prefill))
         case .generate:
-            appState.path.append(.generate(prefill: prefill))
+            appState.path.append(
+                .generate(
+                    prefill: prefill,
+                    sourceChatRecordId: persistedChatRecordId
+                )
+            )
         }
     }
 
@@ -373,22 +375,41 @@ struct ChatView: View {
 
         if let route = response.route {
             return ChatActionRecommendation(
-                primaryRoute: route,
-                modes: [route, route.alternative],
+                action: .enter(route),
+                prefill: prefill
+            )
+        }
+
+        let intentModes = contractModes(from: response.intent)
+        if intentModes.count == 1, let intentMode = intentModes.first {
+            return ChatActionRecommendation(
+                action: .enter(intentMode),
                 prefill: prefill
             )
         }
 
         let responseModes = orderedModes(from: modes(from: response))
-        guard !responseModes.isEmpty else {
-            return nil
+        if isAmbiguousNeedInput(response, modes: responseModes) {
+            return ChatActionRecommendation(
+                action: .choose(Self.modeOrder),
+                prefill: prefill
+            )
         }
 
+        guard responseModes.count == 1, let responseMode = responseModes.first else {
+            return nil
+        }
         return ChatActionRecommendation(
-            primaryRoute: responseModes.count == 1 ? responseModes[0] : nil,
-            modes: responseModes,
+            action: .enter(responseMode),
             prefill: prefill
         )
+    }
+
+    private func isAmbiguousNeedInput(_ response: ChatResponse, modes: [ContractMode]) -> Bool {
+        response.type.trimmedForInput.lowercased() == "need_input"
+            && response.route == nil
+            && contractModes(from: response.intent).isEmpty
+            && Set(modes) == Set(Self.modeOrder)
     }
 
     private func latestUserInput(in messages: [ChatMessage]) -> String? {
@@ -459,6 +480,41 @@ struct ChatView: View {
     }
 }
 
+private struct ChatSendButton: View {
+    var isLoading = false
+    var isDisabled = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                if isLoading {
+                    ProgressView()
+                        .tint(.white)
+                } else {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 17, weight: .bold))
+                }
+            }
+            .frame(width: 40, height: 40)
+            .foregroundStyle(.white)
+            .background(
+                LinearGradient(
+                    colors: [Color(hex: 0x3B82F6), Color(hex: 0x2563EB)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .shadow(color: Color(hex: 0x2563EB).opacity(isDisabled ? 0 : 0.28), radius: 7, x: 0, y: 4)
+            .opacity(isDisabled ? 0.52 : 1)
+        }
+        .buttonStyle(.plain)
+        .disabled(isDisabled || isLoading)
+        .accessibilityLabel(isLoading ? "正在发送" : "发送")
+    }
+}
+
 private struct ChatBubble: View {
     let message: ChatMessage
     var recommendation: ChatActionRecommendation?
@@ -466,108 +522,144 @@ private struct ChatBubble: View {
     let onSelectMode: (ContractMode) -> Void
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 10) {
+        HStack(alignment: .top, spacing: 8) {
             if message.role == .user {
-                Spacer(minLength: 54)
+                Spacer(minLength: 48)
+            } else {
+                leadingAvatar
             }
 
-            VStack(alignment: alignment, spacing: 6) {
-                Text(roleTitle)
-                    .font(QiheFont.caption(size: 11, weight: .semibold))
-                    .foregroundStyle(titleColor)
+            VStack(alignment: .leading, spacing: 10) {
+                Text(message.content)
+                    .font(QiheFont.body(size: 14))
+                    .lineSpacing(3)
+                    .foregroundStyle(textColor)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(message.content)
-                        .font(QiheFont.body(size: 15))
-                        .foregroundStyle(textColor)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    if message.role == .assistant, let recommendation {
-                        ChatRecommendationActions(
-                            recommendation: recommendation,
-                            isDisabled: isActionDisabled,
-                            onSelectMode: onSelectMode
-                        )
-                    }
+                if message.role == .assistant, let recommendation {
+                    ChatRecommendationActions(
+                        recommendation: recommendation,
+                        isDisabled: isActionDisabled,
+                        onSelectMode: onSelectMode
+                    )
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(background)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(borderColor, lineWidth: message.role == .user ? 0 : 1)
-                )
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+            .background(bubbleBackground)
+            .clipShape(bubbleShape)
+            .shadow(
+                color: message.role == .user
+                    ? Color(hex: 0x2563EB).opacity(0.24)
+                    : Color(hex: 0x2563EB).opacity(0.08),
+                radius: message.role == .user ? 10 : 8,
+                x: 0,
+                y: message.role == .user ? 5 : 3
+            )
 
             if message.role != .user {
-                Spacer(minLength: 54)
+                Spacer(minLength: 48)
             }
         }
         .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
     }
 
-    private var roleTitle: String {
+    @ViewBuilder
+    private var leadingAvatar: some View {
         switch message.role {
-        case .system:
-            return "系统"
-        case .user:
-            return "你"
         case .assistant:
-            return "契合"
+            QiheAssistantAvatar(size: 32)
+        case .system:
+            Image(systemName: "info.circle.fill")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(QiheColor.brandBlue)
+                .frame(width: 32, height: 32)
+                .background(QiheColor.infoBlueSoft)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        case .user:
+            EmptyView()
         }
-    }
-
-    private var alignment: HorizontalAlignment {
-        message.role == .user ? .trailing : .leading
-    }
-
-    private var titleColor: Color {
-        message.role == .user ? QiheColor.navy : QiheColor.muted
     }
 
     private var textColor: Color {
-        message.role == .user ? .white : QiheColor.inkSoft
+        message.role == .user ? .white : Color(hex: 0x1F2B45)
     }
 
-    private var background: Color {
+    @ViewBuilder
+    private var bubbleBackground: some View {
         switch message.role {
         case .system:
-            return QiheColor.paperDeep
+            Color(hex: 0xF7FAFF)
         case .user:
-            return QiheColor.navy
+            LinearGradient(
+                colors: [Color(hex: 0x3B82F6), Color(hex: 0x2563EB)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
         case .assistant:
-            return QiheColor.card
+            Color.white
         }
     }
 
-    private var borderColor: Color {
-        message.role == .system ? QiheColor.lineStrong : QiheColor.line
+    private var bubbleShape: UnevenRoundedRectangle {
+        if message.role == .user {
+            return UnevenRoundedRectangle(
+                topLeadingRadius: 16,
+                bottomLeadingRadius: 16,
+                bottomTrailingRadius: 16,
+                topTrailingRadius: 4,
+                style: .continuous
+            )
+        }
+
+        return UnevenRoundedRectangle(
+            topLeadingRadius: 4,
+            bottomLeadingRadius: 16,
+            bottomTrailingRadius: 16,
+            topTrailingRadius: 16,
+            style: .continuous
+        )
+    }
+}
+
+private struct ChatWelcomeBubble: View {
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            QiheAssistantAvatar(size: 32)
+
+            Text("你好，我是小契。告诉我合同需求或想确认的问题，我会根据内容继续协助你。")
+                .font(QiheFont.body(size: 14))
+                .lineSpacing(3)
+                .foregroundStyle(Color(hex: 0x1F2B45))
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 11)
+                .background(Color.white)
+                .clipShape(
+                    UnevenRoundedRectangle(
+                        topLeadingRadius: 4,
+                        bottomLeadingRadius: 16,
+                        bottomTrailingRadius: 16,
+                        topTrailingRadius: 16,
+                        style: .continuous
+                    )
+                )
+                .shadow(color: Color(hex: 0x2563EB).opacity(0.08), radius: 8, x: 0, y: 3)
+
+            Spacer(minLength: 48)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
 private struct ChatActionRecommendation: Equatable {
-    let primaryRoute: ContractMode?
-    let modes: [ContractMode]
+    enum Action: Equatable {
+        case enter(ContractMode)
+        case choose([ContractMode])
+    }
+
+    let action: Action
     let prefill: String
-
-    var showsChoicePair: Bool {
-        primaryRoute == nil && Set(modes) == Set([.review, .generate])
-    }
-
-    var primaryMode: ContractMode? {
-        primaryRoute ?? modes.first
-    }
-
-    var secondaryMode: ContractMode? {
-        if let primaryRoute {
-            return primaryRoute.alternative
-        }
-        guard modes.count > 1 else {
-            return nil
-        }
-        return modes[1]
-    }
 }
 
 private struct ChatRecommendationActions: View {
@@ -575,64 +667,73 @@ private struct ChatRecommendationActions: View {
     var isDisabled = false
     let onSelectMode: (ContractMode) -> Void
 
+    @ViewBuilder
     var body: some View {
-        if recommendation.showsChoicePair {
-            HStack(spacing: 8) {
-                ForEach(recommendation.modes, id: \.self) { mode in
-                    QiheSecondaryButton(
-                        title: mode.label,
-                        systemImage: mode.systemImage,
-                        isDisabled: isDisabled
-                    ) {
-                        onSelectMode(mode)
+        switch recommendation.action {
+        case let .choose(modes):
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    ForEach(modes, id: \.self) { mode in
+                        modeChoiceButton(mode)
                     }
-                }
-            }
-        } else if let primaryMode = recommendation.primaryMode {
-            VStack(spacing: 8) {
-                QihePrimaryButton(
-                    title: primaryMode.enterTitle,
-                    systemImage: primaryMode.systemImage,
-                    isDisabled: isDisabled
-                ) {
-                    onSelectMode(primaryMode)
                 }
 
-                if let secondaryMode = recommendation.secondaryMode {
-                    QiheSecondaryButton(
-                        title: secondaryMode.switchTitle,
-                        systemImage: secondaryMode.systemImage,
-                        isDisabled: isDisabled
-                    ) {
-                        onSelectMode(secondaryMode)
+                VStack(spacing: 8) {
+                    ForEach(modes, id: \.self) { mode in
+                        modeChoiceButton(mode)
                     }
                 }
             }
+        case let .enter(mode):
+            QihePrimaryButton(
+                title: mode.enterTitle,
+                systemImage: mode.systemImage,
+                isDisabled: isDisabled
+            ) {
+                onSelectMode(mode)
+            }
+        }
+    }
+
+    private func modeChoiceButton(_ mode: ContractMode) -> some View {
+        QiheSecondaryButton(
+            title: mode.label,
+            systemImage: mode.systemImage,
+            isDisabled: isDisabled
+        ) {
+            onSelectMode(mode)
         }
     }
 }
 
 private struct TypingIndicator: View {
     var body: some View {
-        HStack {
+        HStack(alignment: .top, spacing: 8) {
+            QiheAssistantAvatar(size: 32)
+
             HStack(spacing: 8) {
                 ProgressView()
-                    .tint(QiheColor.navy)
+                    .tint(Color(hex: 0x2563EB))
 
-                Text("正在整理回复")
+                Text("小契正在整理回复")
                     .font(QiheFont.body(size: 14, weight: .medium))
-                    .foregroundStyle(QiheColor.muted)
+                    .foregroundStyle(Color(hex: 0x64748B))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
-            .background(QiheColor.card)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(QiheColor.line, lineWidth: 1)
+            .background(Color.white)
+            .clipShape(
+                UnevenRoundedRectangle(
+                    topLeadingRadius: 4,
+                    bottomLeadingRadius: 16,
+                    bottomTrailingRadius: 16,
+                    topTrailingRadius: 16,
+                    style: .continuous
+                )
             )
+            .shadow(color: Color(hex: 0x2563EB).opacity(0.08), radius: 8, x: 0, y: 3)
 
-            Spacer(minLength: 54)
+            Spacer(minLength: 48)
         }
     }
 }
@@ -650,18 +751,9 @@ private extension ContractMode {
     var enterTitle: String {
         switch self {
         case .review:
-            return "进入审查"
+            return "进入合同审查"
         case .generate:
-            return "进入生成"
-        }
-    }
-
-    var switchTitle: String {
-        switch self {
-        case .review:
-            return "改为审查"
-        case .generate:
-            return "改为生成"
+            return "进入合同生成"
         }
     }
 
@@ -674,12 +766,4 @@ private extension ContractMode {
         }
     }
 
-    var alternative: ContractMode {
-        switch self {
-        case .review:
-            return .generate
-        case .generate:
-            return .review
-        }
-    }
 }

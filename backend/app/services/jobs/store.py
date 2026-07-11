@@ -3,9 +3,23 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from typing import Any
 
 from app.services.db import connect
+
+
+class ActiveJobExistsError(Exception):
+    """Raised when a user already owns a queued or running job."""
+
+
+PUBLIC_JOB_ERROR_MESSAGES = {
+    "insufficient_credits": "积分不足，任务无法完成",
+    "credit_deduction_failed": "积分扣除失败，请稍后重试",
+    "job_execution_failed": "任务处理失败，请稍后重试",
+    "job_state_conflict": "任务状态冲突，请重新提交",
+}
+DEFAULT_PUBLIC_JOB_ERROR_MESSAGE = "任务处理失败，请稍后重试"
 
 
 def create_job(
@@ -17,32 +31,62 @@ def create_job(
     review_perspective: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> None:
-    """Insert a new job row."""
+    """Atomically insert a job only when the owner has no active job."""
     now = _now_iso()
     steps_json = json.dumps(_default_steps(), ensure_ascii=False)
     with connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        active = conn.execute(
+            "SELECT job_id FROM jobs WHERE owner_user_id = ? AND status IN ('queued', 'running') LIMIT 1",
+            (owner_user_id,),
+        ).fetchone()
+        if active:
+            raise ActiveJobExistsError(str(active["job_id"]))
+        try:
+            conn.execute(
+                """
+                INSERT INTO jobs (job_id, owner_user_id, mode, status, progress,
+                                  current_step, steps_json, source_text, file_id,
+                                  review_perspective, metadata_json,
+                                  created_at, updated_at)
+                VALUES (?, ?, ?, 'queued', 0, NULL, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    job_id,
+                    owner_user_id,
+                    mode,
+                    steps_json,
+                    source_text,
+                    file_id,
+                    review_perspective,
+                    json.dumps(metadata or {}, ensure_ascii=False),
+                    now,
+                    now,
+                ),
+            )
+        except sqlite3.IntegrityError as exc:
+            if "jobs.owner_user_id" in str(exc):
+                raise ActiveJobExistsError() from exc
+            raise
+
+
+def claim_queued_job(job_id: str) -> dict[str, Any] | None:
+    """Atomically claim a queued job for one runner."""
+    with connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+        if not row or row["status"] != "queued":
+            return None
         conn.execute(
             """
-            INSERT INTO jobs (job_id, owner_user_id, mode, status, progress,
-                              current_step, steps_json, source_text, file_id,
-                              review_perspective, metadata_json,
-                              created_at, updated_at)
-            VALUES (?, ?, ?, 'queued', 0, NULL, ?, ?, ?, ?, ?, ?, ?)
+            UPDATE jobs
+            SET status = 'running', progress = 10, current_step = 'parsing', updated_at = ?
+            WHERE job_id = ? AND status = 'queued'
             """,
-            (
-                job_id,
-                owner_user_id,
-                mode,
-                steps_json,
-                source_text,
-                file_id,
-                review_perspective,
-                json.dumps(metadata or {}, ensure_ascii=False),
-                now,
-                now,
-            ),
+            (_now_iso(), job_id),
         )
-        conn.commit()
+        claimed = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+        return _row_to_dict(claimed) if claimed else None
 
 
 def update_job_status(
@@ -83,17 +127,26 @@ def set_job_result(job_id: str, result: dict[str, Any]) -> None:
     """Set the successful result for a job."""
     with connect() as conn:
         conn.execute(
-            "UPDATE jobs SET result_json = ?, status = 'succeeded', progress = 100, updated_at = ? WHERE job_id = ?",
+            """
+            UPDATE jobs
+            SET result_json = ?, status = 'succeeded', progress = 100, updated_at = ?
+            WHERE job_id = ? AND status = 'running'
+            """,
             (json.dumps(result, ensure_ascii=False), _now_iso(), job_id),
         )
         conn.commit()
 
 
-def set_job_error(job_id: str, error_code: str, error_message: str) -> None:
-    """Set error info for a failed job."""
+def set_job_error(job_id: str, error_code: str, _unsafe_error_message: str | None = None) -> None:
+    """Persist only an allowlisted public error message for a failed job."""
+    error_message = PUBLIC_JOB_ERROR_MESSAGES.get(error_code, DEFAULT_PUBLIC_JOB_ERROR_MESSAGE)
     with connect() as conn:
         conn.execute(
-            "UPDATE jobs SET error_code = ?, error_message = ?, status = 'failed', updated_at = ? WHERE job_id = ?",
+            """
+            UPDATE jobs
+            SET error_code = ?, error_message = ?, status = 'failed', updated_at = ?
+            WHERE job_id = ? AND status IN ('queued', 'running')
+            """,
             (error_code, error_message, _now_iso(), job_id),
         )
         conn.commit()
@@ -148,7 +201,11 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
     if row["result_json"]:
         result["result"] = json.loads(row["result_json"])
     if row["error_code"]:
-        result["error"] = {"code": row["error_code"], "message": row["error_message"] or ""}
+        error_code = str(row["error_code"])
+        result["error"] = {
+            "code": error_code,
+            "message": PUBLIC_JOB_ERROR_MESSAGES.get(error_code, DEFAULT_PUBLIC_JOB_ERROR_MESSAGE),
+        }
     return result
 
 
