@@ -476,6 +476,14 @@ enum APIClientError: LocalizedError {
     case server(statusCode: Int, detail: String)
     case invalidResponse
 
+    /// 仅异步 job 创建端点未部署时，允许视图层回退到同步合同接口。
+    var permitsSynchronousContractFallback: Bool {
+        guard case let .server(statusCode, _) = self else {
+            return false
+        }
+        return statusCode == 404 || statusCode == 405
+    }
+
     var errorDescription: String? {
         switch self {
         case .unsupportedFileType:
@@ -483,6 +491,9 @@ enum APIClientError: LocalizedError {
         case let .server(statusCode, detail):
             if statusCode == 401 {
                 return detail
+            }
+            if statusCode == 404 || statusCode == 405 {
+                return "当前服务暂不可用，请稍后重试。"
             }
             return "服务器返回异常（\(statusCode)）：\(detail)"
         case .invalidResponse:
@@ -521,11 +532,10 @@ extension Error {
 }
 
 enum QiheDocumentValidator {
-    static let allowedExtensions: Set<String> = ["pdf", "doc", "docx", "txt"]
+    static let allowedExtensions: Set<String> = ["pdf", "docx", "txt"]
     static let allowedTypes: [UTType] = [
         .pdf,
         .plainText,
-        UTType(importedAs: "com.microsoft.word.doc"),
         UTType(importedAs: "org.openxmlformats.wordprocessingml.document")
     ]
 
@@ -539,8 +549,6 @@ enum QiheDocumentValidator {
         switch url.pathExtension.lowercased() {
         case "pdf":
             return "application/pdf"
-        case "doc":
-            return "application/msword"
         case "docx":
             return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         case "txt":

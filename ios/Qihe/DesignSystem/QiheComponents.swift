@@ -1,4 +1,6 @@
+import PDFKit
 import SwiftUI
+import zlib
 
 struct SealMark: View {
     let size: CGFloat
@@ -13,54 +15,62 @@ struct QiheLogoMark: View {
     let size: CGFloat
 
     var body: some View {
-        Canvas { context, canvasSize in
-            let scale = min(canvasSize.width, canvasSize.height) / 54
+        Image("QiheLogo")
+            .resizable()
+            .renderingMode(.original)
+            .scaledToFit()
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+}
 
-            func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
-                CGPoint(
-                    x: canvasSize.width / 2 + x * scale,
-                    y: canvasSize.height / 2 + y * scale
+/// 契合产品内的 AI 合同助手“小契”。
+///
+/// 这是没有正式角色素材时的可替换占位组件。它使用抽象对话符号，
+/// 与 `QiheLogoMark` 的品牌职责保持分离，也不使用盾牌图形。
+struct QiheAssistantAvatar: View {
+    var size: CGFloat = 40
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: size * 0.31, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [QiheColor.brandLight, QiheColor.brandBlue],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
                 )
-            }
 
-            var upperFold = Path()
-            upperFold.move(to: point(-23, -11))
-            upperFold.addLine(to: point(-4, -25))
-            upperFold.addLine(to: point(24, -6))
-            upperFold.addLine(to: point(11, 4))
-            upperFold.addLine(to: point(-5, -7))
-            upperFold.addLine(to: point(-18, 4))
-            upperFold.closeSubpath()
+            RoundedRectangle(cornerRadius: size * 0.16, style: .continuous)
+                .fill(QiheColor.neutral0.opacity(0.96))
+                .frame(width: size * 0.58, height: size * 0.43)
+                .overlay(alignment: .leading) {
+                    VStack(alignment: .leading, spacing: size * 0.07) {
+                        Capsule(style: .continuous)
+                            .fill(QiheColor.brandBlue)
+                            .frame(width: size * 0.25, height: max(2, size * 0.055))
 
-            var lowerFold = Path()
-            lowerFold.move(to: point(-18, 4))
-            lowerFold.addLine(to: point(-5, -7))
-            lowerFold.addLine(to: point(15, 7))
-            lowerFold.addLine(to: point(-4, 25))
-            lowerFold.addLine(to: point(-24, 9))
-            lowerFold.closeSubpath()
-
-            var accentFold = Path()
-            accentFold.move(to: point(15, 7))
-            accentFold.addLine(to: point(24, -6))
-            accentFold.addLine(to: point(19, 17))
-            accentFold.addLine(to: point(-4, 25))
-            accentFold.closeSubpath()
-
-            context.fill(upperFold, with: .color(QiheColor.navyDeep))
-            context.fill(lowerFold, with: .color(QiheColor.navyMid))
-            context.fill(accentFold, with: .color(QiheColor.seal))
-
-            let dotSize = 9.6 * scale
-            let dotRect = CGRect(
-                x: canvasSize.width / 2 - dotSize / 2,
-                y: canvasSize.height / 2 - dotSize / 2,
-                width: dotSize,
-                height: dotSize
-            )
-            context.fill(Path(ellipseIn: dotRect), with: .color(QiheColor.card))
+                        Capsule(style: .continuous)
+                            .fill(QiheColor.brandFrost)
+                            .frame(width: size * 0.34, height: max(2, size * 0.055))
+                    }
+                    .padding(.leading, size * 0.12)
+                }
+                .overlay(alignment: .bottomLeading) {
+                    RoundedRectangle(cornerRadius: size * 0.03, style: .continuous)
+                        .fill(QiheColor.neutral0.opacity(0.96))
+                        .frame(width: size * 0.13, height: size * 0.13)
+                        .rotationEffect(.degrees(42))
+                        .offset(x: size * 0.09, y: size * 0.045)
+                }
         }
         .frame(width: size, height: size)
+        .overlay(
+            RoundedRectangle(cornerRadius: size * 0.31, style: .continuous)
+                .stroke(QiheColor.neutral0.opacity(0.58), lineWidth: 1)
+        )
+        .shadow(color: QiheColor.shadowBlue.opacity(0.55), radius: size * 0.18, x: 0, y: size * 0.08)
         .accessibilityHidden(true)
     }
 }
@@ -74,14 +84,14 @@ struct QiheBrandLockup: View {
         HStack(alignment: .center, spacing: 8) {
             QiheLogoMark(size: markSize)
 
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text("契合")
-                    .font(QiheFont.title(size: titleSize))
+                    .font(QiheFont.h2(size: titleSize, weight: .bold))
                     .foregroundStyle(QiheColor.ink)
                     .lineLimit(1)
 
                 Text(subtitle)
-                    .font(QiheFont.caption(size: max(7.5, titleSize * 0.34), weight: .semibold))
+                    .font(QiheFont.micro(size: max(8, titleSize * 0.34), weight: .semibold))
                     .foregroundStyle(QiheColor.muted)
                     .lineLimit(1)
             }
@@ -117,23 +127,9 @@ struct QiheSloganLockup: View {
 
     private var sloganMark: some View {
         ZStack(alignment: .center) {
-            RoundedRectangle(cornerRadius: compact ? 1.6 : 2, style: .continuous)
-                .fill(QiheColor.seal)
-                .frame(width: compact ? 4 : 5, height: compact ? 27 : 31)
-                .rotationEffect(.degrees(-7))
-
-            RoundedRectangle(cornerRadius: compact ? 1.5 : 1.8, style: .continuous)
-                .fill(QiheColor.navy)
-                .frame(width: compact ? 4 : 5, height: compact ? 14 : 16)
-                .offset(x: compact ? 6 : 7, y: compact ? 6 : 7)
-                .rotationEffect(.degrees(-7))
-
-            Circle()
-                .fill(QiheColor.card)
-                .frame(width: compact ? 3.5 : 4.2, height: compact ? 3.5 : 4.2)
-                .offset(x: compact ? 2.6 : 3, y: compact ? -3 : -3.4)
+            QiheLogoMark(size: compact ? 22 : 26)
         }
-        .frame(width: compact ? 17 : 20, height: compact ? 31 : 35)
+        .frame(width: compact ? 22 : 26, height: compact ? 31 : 35)
         .accessibilityHidden(true)
     }
 }
@@ -142,15 +138,18 @@ struct BlankSealMark: View {
     var size: CGFloat = 46
 
     var body: some View {
-        Text("空")
-            .font(QiheFont.title(size: size * 0.43))
-            .foregroundStyle(QiheColor.lineStrong)
-            .frame(width: size, height: size)
-            .overlay(
-                RoundedRectangle(cornerRadius: size * 0.26, style: .continuous)
-                    .strokeBorder(QiheColor.lineStrong, style: StrokeStyle(lineWidth: max(1.5, size * 0.044), dash: [5, 4]))
-            )
-            .rotationEffect(.degrees(-5))
+        ZStack {
+            RoundedRectangle(cornerRadius: size * 0.30, style: .continuous)
+                .fill(QiheColor.infoBlueSoft)
+
+            QiheLogoMark(size: size * 0.46)
+                .opacity(0.72)
+        }
+        .frame(width: size, height: size)
+        .overlay(
+            RoundedRectangle(cornerRadius: size * 0.30, style: .continuous)
+                .strokeBorder(QiheColor.glassStroke, style: StrokeStyle(lineWidth: max(1, size * 0.030), dash: [5, 4]))
+        )
     }
 }
 
@@ -160,6 +159,7 @@ struct QihePrimaryButton: View {
     var isLoading = false
     var isDisabled = false
     let action: () -> Void
+    @ScaledMetric(relativeTo: .body) private var minHeight: CGFloat = 48
 
     var body: some View {
         Button(action: action) {
@@ -172,15 +172,26 @@ struct QihePrimaryButton: View {
                 }
 
                 Text(title)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.82)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .font(QiheFont.body(size: 16, weight: .semibold))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
             .frame(maxWidth: .infinity)
-            .frame(height: 48)
+            .frame(minHeight: minHeight)
             .foregroundStyle(.white)
-            .background(isDisabled ? QiheColor.muted : QiheColor.navy)
-            .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
+            .background {
+                if isDisabled {
+                    RoundedRectangle(cornerRadius: QiheRadius.cta, style: .continuous)
+                        .fill(QiheColor.neutral300)
+                } else {
+                    RoundedRectangle(cornerRadius: QiheRadius.cta, style: .continuous)
+                        .fill(QiheColor.primaryGradient)
+                }
+            }
+            .shadow(color: isDisabled ? .clear : QiheColor.shadowBlue, radius: 24, x: 0, y: 8)
         }
         .buttonStyle(.plain)
         .disabled(isDisabled || isLoading)
@@ -193,6 +204,7 @@ struct QiheSecondaryButton: View {
     var systemImage: String?
     var isDisabled = false
     let action: () -> Void
+    @ScaledMetric(relativeTo: .body) private var minHeight: CGFloat = 44
 
     var body: some View {
         Button(action: action) {
@@ -201,18 +213,28 @@ struct QiheSecondaryButton: View {
                     Image(systemName: systemImage)
                 }
                 Text(title)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.82)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .font(QiheFont.body(size: 15, weight: .semibold))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
             .frame(maxWidth: .infinity)
-            .frame(height: 44)
-            .foregroundStyle(isDisabled ? QiheColor.muted : QiheColor.navy)
-            .background(isDisabled ? QiheColor.line : QiheColor.navySoft)
-            .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
+            .frame(minHeight: minHeight)
+            .foregroundStyle(isDisabled ? QiheColor.muted : QiheColor.brandBlue)
+            .background {
+                RoundedRectangle(cornerRadius: QiheRadius.cta, style: .continuous)
+                    .fill(isDisabled ? QiheColor.neutral100 : QiheColor.glassFill)
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: QiheRadius.cta, style: .continuous)
+                    .stroke(isDisabled ? QiheColor.line : QiheColor.glassStroke, lineWidth: 1)
+            )
         }
         .buttonStyle(.plain)
         .disabled(isDisabled)
+        .accessibilityLabel(title)
     }
 }
 
@@ -224,11 +246,30 @@ struct PaperCard<Content: View>: View {
         content
             .padding(padding)
             .background(QiheColor.card)
-            .clipShape(RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: QiheRadius.card, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous)
-                    .stroke(QiheColor.line, lineWidth: 1)
+                RoundedRectangle(cornerRadius: QiheRadius.card, style: .continuous)
+                    .stroke(QiheColor.glassStroke, lineWidth: 1)
             )
+            .shadow(color: QiheColor.shadowNavySoft, radius: 8, x: 0, y: 2)
+    }
+}
+
+struct QiheGlassCard<Content: View>: View {
+    var padding: CGFloat = 16
+    var cornerRadius: CGFloat = QiheRadius.card
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content
+            .padding(padding)
+            .background(QiheColor.glassFill)
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(QiheColor.glassStroke, lineWidth: 1)
+            )
+            .shadow(color: QiheColor.shadowNavySoft, radius: 10, x: 0, y: 3)
     }
 }
 
@@ -239,7 +280,7 @@ struct QiheSectionHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(QiheFont.title(size: 22))
+                .font(QiheFont.h1(size: 22))
                 .foregroundStyle(QiheColor.ink)
 
             if let subtitle {
@@ -256,17 +297,33 @@ struct QiheStatusPill: View {
     let text: String
     var color: Color = QiheColor.navy
     var background: Color = QiheColor.navySoft
+    @ScaledMetric(relativeTo: .caption) private var minHeight: CGFloat = 24
 
     var body: some View {
         Text(text)
-            .font(QiheFont.caption(size: 12, weight: .semibold))
+            .font(QiheFont.micro(size: 11, weight: .semibold))
             .foregroundStyle(color)
-            .lineLimit(1)
-            .minimumScaleFactor(0.82)
-            .padding(.horizontal, 10)
-            .frame(height: 26)
+            .multilineTextAlignment(.center)
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .frame(minHeight: minHeight)
             .background(background)
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: QiheRadius.badge, style: .continuous))
+    }
+}
+
+struct QiheRiskBadge: View {
+    let level: RiskLevel
+    var text: String?
+
+    var body: some View {
+        QiheStatusPill(
+            text: text ?? level.label,
+            color: level.foreground,
+            background: level.background
+        )
     }
 }
 
@@ -284,7 +341,7 @@ struct QiheIconCircleButton: View {
             ZStack {
                 if isLoading {
                     ProgressView()
-                        .tint(isPrimary ? .white : QiheColor.navy)
+                        .tint(.white)
                 } else {
                     Image(systemName: systemImage)
                         .font(.system(size: max(14, size * 0.45), weight: .semibold))
@@ -292,11 +349,25 @@ struct QiheIconCircleButton: View {
             }
             .frame(width: size, height: size)
             .foregroundStyle(foreground)
-            .background(background)
+            .background {
+                if isLoading {
+                    Circle()
+                        .fill(QiheColor.primaryGradient)
+                } else if isDisabled {
+                    Circle()
+                        .fill(QiheColor.line)
+                } else if isPrimary {
+                    Circle()
+                        .fill(QiheColor.primaryGradient)
+                } else {
+                    Circle()
+                        .fill(QiheColor.card)
+                }
+            }
             .clipShape(Circle())
             .overlay(
                 Circle()
-                    .stroke(borderColor, lineWidth: isPrimary ? 0 : 1)
+                    .stroke(borderColor, lineWidth: isLoading || isPrimary ? 0 : 1)
             )
         }
         .buttonStyle(.plain)
@@ -305,17 +376,13 @@ struct QiheIconCircleButton: View {
     }
 
     private var foreground: Color {
+        if isLoading {
+            return .white
+        }
         if isDisabled {
             return QiheColor.muted
         }
         return isPrimary ? .white : QiheColor.inkSoft
-    }
-
-    private var background: Color {
-        if isDisabled {
-            return QiheColor.line
-        }
-        return isPrimary ? QiheColor.navy : QiheColor.card
     }
 
     private var borderColor: Color {
@@ -372,14 +439,14 @@ struct AttachmentRow: View {
     let action: () -> Void
 
     var body: some View {
-        PaperCard(padding: 14) {
+        QiheGlassCard(padding: 14) {
             HStack(spacing: 12) {
                 Image(systemName: systemImage)
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(QiheColor.navy)
-                    .frame(width: 36, height: 36)
-                    .background(QiheColor.navySoft)
-                    .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
+                    .foregroundStyle(isDisabled ? QiheColor.neutral300 : QiheColor.brandBlue)
+                    .frame(width: 40, height: 40)
+                    .background(isDisabled ? QiheColor.neutral100 : QiheColor.infoBlueSoft)
+                    .clipShape(RoundedRectangle(cornerRadius: QiheRadius.input, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
@@ -398,22 +465,97 @@ struct AttachmentRow: View {
                 Spacer()
 
                 Button(action: action) {
-                    Text(actionTitle)
-                        .font(QiheFont.caption(size: 12, weight: .semibold))
-                        .foregroundStyle(isDisabled ? QiheColor.muted : QiheColor.navy)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.86)
-                        .padding(.horizontal, 10)
-                        .frame(minWidth: 46)
-                        .frame(height: 30)
-                        .background(isDisabled ? QiheColor.line : QiheColor.navySoft)
-                        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.xs, style: .continuous))
-                        .contentShape(RoundedRectangle(cornerRadius: QiheRadius.xs, style: .continuous))
+                    HStack(spacing: 5) {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.system(size: 12, weight: .semibold))
+
+                        Text(actionTitle)
+                    }
+                    .font(QiheFont.caption(size: 12, weight: .semibold))
+                    .foregroundStyle(isDisabled ? QiheColor.muted : QiheColor.brandBlue)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.86)
+                    .padding(.horizontal, 11)
+                    .frame(minWidth: 50)
+                    .frame(height: 32)
+                    .background(isDisabled ? QiheColor.neutral100 : QiheColor.infoBlueSoft)
+                    .clipShape(RoundedRectangle(cornerRadius: QiheRadius.input, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: QiheRadius.input, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .disabled(isDisabled)
             }
         }
+        .overlay(
+            RoundedRectangle(cornerRadius: QiheRadius.card, style: .continuous)
+                .strokeBorder(
+                    isDisabled ? QiheColor.line : QiheColor.brandFrost,
+                    style: StrokeStyle(lineWidth: 1.2, dash: [6, 5])
+                )
+        )
+    }
+}
+
+struct QiheSegmentedOption<SelectionValue: Hashable>: Identifiable {
+    let value: SelectionValue
+    let title: String
+    var systemImage: String?
+
+    var id: SelectionValue {
+        value
+    }
+}
+
+struct QiheSegmentedPicker<SelectionValue: Hashable>: View {
+    let options: [QiheSegmentedOption<SelectionValue>]
+    @Binding var selection: SelectionValue
+    @ScaledMetric(relativeTo: .caption) private var optionMinHeight: CGFloat = 34
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(options) { option in
+                Button {
+                    selection = option.value
+                } label: {
+                    HStack(spacing: 6) {
+                        if let systemImage = option.systemImage {
+                            Image(systemName: systemImage)
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+
+                        Text(option.title)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .font(QiheFont.caption(size: 13, weight: isSelected(option) ? .semibold : .medium))
+                    .foregroundStyle(isSelected(option) ? QiheColor.brandBlue : QiheColor.muted)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: optionMinHeight)
+                    .background {
+                        if isSelected(option) {
+                            RoundedRectangle(cornerRadius: QiheRadius.input, style: .continuous)
+                                .fill(QiheColor.card)
+                                .shadow(color: QiheColor.shadowNavySoft, radius: 4, x: 0, y: 1)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(4)
+        .background(QiheColor.neutral100.opacity(0.72))
+        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.input + 4, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: QiheRadius.input + 4, style: .continuous)
+                .stroke(QiheColor.glassStroke, lineWidth: 1)
+        )
+    }
+
+    private func isSelected(_ option: QiheSegmentedOption<SelectionValue>) -> Bool {
+        selection == option.value
     }
 }
 
@@ -503,25 +645,24 @@ struct RiskGradeStamp: View {
     let level: RiskLevel
 
     var body: some View {
-        VStack(spacing: 3) {
+        VStack(spacing: 4) {
             Text(level.gradeMark)
-                .font(QiheFont.title(size: 22))
+                .font(QiheFont.h2(size: 22, weight: .bold))
                 .lineLimit(1)
 
             Text(level.label)
-                .font(QiheFont.caption(size: 9, weight: .semibold))
+                .font(QiheFont.micro(size: 9, weight: .semibold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         }
         .foregroundStyle(level.foreground)
-        .frame(width: 60, height: 60)
-        .background(QiheColor.card.opacity(0.72))
-        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous))
+        .frame(width: 62, height: 58)
+        .background(level.background)
+        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.card, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous)
-                .stroke(level.foreground, lineWidth: 2)
+            RoundedRectangle(cornerRadius: QiheRadius.card, style: .continuous)
+                .stroke(level.foreground.opacity(0.35), lineWidth: 1)
         )
-        .rotationEffect(.degrees(7))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("风险等级 \(level.label)")
     }
@@ -563,7 +704,7 @@ struct RiskCard: View {
                     VStack(alignment: .leading, spacing: 7) {
                         Text("建议替换文本")
                             .font(QiheFont.caption(size: 12, weight: .semibold))
-                            .foregroundStyle(QiheColor.seal)
+                            .foregroundStyle(QiheColor.brandBlue)
 
                         Text(replacement)
                             .font(QiheFont.body(size: 14))
@@ -572,11 +713,11 @@ struct RiskCard: View {
                     }
                     .padding(11)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(QiheColor.sealSoft.opacity(0.46))
+                    .background(QiheColor.infoBlueSoft)
                     .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous)
-                            .stroke(QiheColor.seal.opacity(0.24), lineWidth: 1)
+                            .stroke(QiheColor.brandFrost.opacity(0.72), lineWidth: 1)
                     )
                 }
 
@@ -704,19 +845,23 @@ struct ContractDraftSheet: View {
                 .padding(6)
         )
         .overlay(alignment: .bottomTrailing) {
-            Text("待签\n用印")
-                .font(QiheFont.caption(size: 12, weight: .semibold))
-                .foregroundStyle(QiheColor.seal.opacity(0.62))
-                .multilineTextAlignment(.center)
-                .lineSpacing(2)
-                .frame(width: 54, height: 54)
-                .overlay(
-                    RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous)
-                        .stroke(QiheColor.seal.opacity(0.5), lineWidth: 2)
-                )
-                .rotationEffect(.degrees(-7))
-                .padding(.trailing, 16)
-                .padding(.bottom, 10)
+            HStack(spacing: 5) {
+                QiheLogoMark(size: 16)
+
+                Text("待确认")
+                    .font(QiheFont.micro(size: 11, weight: .semibold))
+            }
+            .foregroundStyle(QiheColor.brandBlue)
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .background(QiheColor.infoBlueSoft)
+            .clipShape(RoundedRectangle(cornerRadius: QiheRadius.badge, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: QiheRadius.badge, style: .continuous)
+                    .stroke(QiheColor.brandFrost, lineWidth: 1)
+            )
+            .padding(.trailing, 16)
+            .padding(.bottom, 12)
         }
     }
 }
@@ -796,7 +941,7 @@ struct ErrorBanner: View {
         PaperCard(padding: 12) {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(QiheColor.seal)
+                    .foregroundStyle(QiheColor.riskRed)
 
                 Text(message)
                     .font(QiheFont.body(size: 13))
@@ -834,26 +979,26 @@ extension RiskLevel {
     var foreground: Color {
         switch self {
         case .high:
-            return QiheColor.seal
+            return QiheColor.riskRed
         case .medium:
-            return QiheColor.amber
+            return QiheColor.riskOrange
         case .low:
-            return QiheColor.pine
+            return QiheColor.safeGreen
         case .pending, .unknown:
-            return QiheColor.navy
+            return QiheColor.infoBlue
         }
     }
 
     var background: Color {
         switch self {
         case .high:
-            return QiheColor.sealSoft
+            return QiheColor.riskRedSoft
         case .medium:
-            return QiheColor.amberSoft
+            return QiheColor.riskOrangeSoft
         case .low:
-            return QiheColor.pineSoft
+            return QiheColor.safeGreenSoft
         case .pending, .unknown:
-            return QiheColor.navySoft
+            return QiheColor.infoBlueSoft
         }
     }
 }
@@ -885,5 +1030,249 @@ extension ToolbarItemPlacement {
         #else
         return .automatic
         #endif
+    }
+}
+
+/// 只保存当前前台上传会话所需的展示信息，不参与合同请求或本地历史持久化。
+@MainActor
+enum QiheUploadPresentationCache {
+    private static var characterCounts: [String: Int] = [:]
+
+    static func store(characterCount: Int?, for file: UploadedFile) {
+        guard let characterCount else {
+            return
+        }
+        characterCounts[file.fileId] = characterCount
+    }
+
+    static func characterCount(for file: UploadedFile?) -> Int? {
+        guard let file else {
+            return nil
+        }
+        return characterCounts[file.fileId]
+    }
+}
+
+/// 从用户选中的本地文件计算展示用字符数，避免扩展上传 DTO。
+enum QiheLocalDocumentMetrics {
+    static func characterCount(at fileURL: URL) -> Int? {
+        let didAccess = fileURL.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess {
+                fileURL.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        switch fileURL.pathExtension.lowercased() {
+        case "txt":
+            return textCharacterCount(at: fileURL)
+        case "pdf":
+            return PDFDocument(url: fileURL)?.string?.count
+        case "docx":
+            return docxCharacterCount(at: fileURL)
+        default:
+            return nil
+        }
+    }
+
+    private static func textCharacterCount(at fileURL: URL) -> Int? {
+        if let text = try? String(contentsOf: fileURL, encoding: .utf8) {
+            return text.count
+        }
+
+        var encoding = String.Encoding.utf8
+        return (try? String(contentsOf: fileURL, usedEncoding: &encoding))?.count
+    }
+
+    private static func docxCharacterCount(at fileURL: URL) -> Int? {
+        guard let archiveData = try? Data(contentsOf: fileURL),
+              let documentXML = zipEntry(named: "word/document.xml", in: archiveData) else {
+            return nil
+        }
+
+        let parserDelegate = QiheDocxCharacterCounter()
+        let parser = XMLParser(data: documentXML)
+        parser.delegate = parserDelegate
+        return parser.parse() ? parserDelegate.characterCount : nil
+    }
+
+    private static func zipEntry(named targetName: String, in archiveData: Data) -> Data? {
+        guard let endRecordOffset = zipEndRecordOffset(in: archiveData),
+              let entryCount = readUInt16(archiveData, at: endRecordOffset + 10),
+              let centralDirectoryOffset = readUInt32(archiveData, at: endRecordOffset + 16) else {
+            return nil
+        }
+
+        var offset = Int(centralDirectoryOffset)
+        for _ in 0..<Int(entryCount) {
+            guard readUInt32(archiveData, at: offset) == 0x02014B50,
+                  let compressionMethod = readUInt16(archiveData, at: offset + 10),
+                  let compressedSize = readUInt32(archiveData, at: offset + 20),
+                  let uncompressedSize = readUInt32(archiveData, at: offset + 24),
+                  let filenameLength = readUInt16(archiveData, at: offset + 28),
+                  let extraLength = readUInt16(archiveData, at: offset + 30),
+                  let commentLength = readUInt16(archiveData, at: offset + 32),
+                  let localHeaderOffset = readUInt32(archiveData, at: offset + 42) else {
+                return nil
+            }
+
+            let nameStart = offset + 46
+            let nameEnd = nameStart + Int(filenameLength)
+            guard nameEnd <= archiveData.count else {
+                return nil
+            }
+            let filename = String(data: archiveData[nameStart..<nameEnd], encoding: .utf8)
+
+            if filename == targetName {
+                return extractZipEntry(
+                    from: archiveData,
+                    localHeaderOffset: Int(localHeaderOffset),
+                    compressionMethod: compressionMethod,
+                    compressedSize: Int(compressedSize),
+                    uncompressedSize: Int(uncompressedSize)
+                )
+            }
+
+            offset = nameEnd + Int(extraLength) + Int(commentLength)
+        }
+
+        return nil
+    }
+
+    private static func zipEndRecordOffset(in data: Data) -> Int? {
+        guard data.count >= 22 else {
+            return nil
+        }
+        let earliestOffset = max(0, data.count - 65_557)
+        for offset in stride(from: data.count - 22, through: earliestOffset, by: -1) {
+            if readUInt32(data, at: offset) == 0x06054B50 {
+                return offset
+            }
+        }
+        return nil
+    }
+
+    private static func extractZipEntry(
+        from archiveData: Data,
+        localHeaderOffset: Int,
+        compressionMethod: UInt16,
+        compressedSize: Int,
+        uncompressedSize: Int
+    ) -> Data? {
+        guard readUInt32(archiveData, at: localHeaderOffset) == 0x04034B50,
+              let localFilenameLength = readUInt16(archiveData, at: localHeaderOffset + 26),
+              let localExtraLength = readUInt16(archiveData, at: localHeaderOffset + 28) else {
+            return nil
+        }
+
+        let dataStart = localHeaderOffset + 30 + Int(localFilenameLength) + Int(localExtraLength)
+        let dataEnd = dataStart + compressedSize
+        guard dataStart >= 0, dataEnd <= archiveData.count else {
+            return nil
+        }
+        let compressedData = Data(archiveData[dataStart..<dataEnd])
+
+        switch compressionMethod {
+        case 0:
+            return compressedData
+        case 8:
+            return inflateRawDeflate(compressedData, expectedSize: uncompressedSize)
+        default:
+            return nil
+        }
+    }
+
+    private static func inflateRawDeflate(_ data: Data, expectedSize: Int) -> Data? {
+        guard !data.isEmpty, expectedSize > 0 else {
+            return expectedSize == 0 ? Data() : nil
+        }
+
+        var stream = z_stream()
+        let initializationStatus = inflateInit2_(
+            &stream,
+            -MAX_WBITS,
+            ZLIB_VERSION,
+            Int32(MemoryLayout<z_stream>.size)
+        )
+        guard initializationStatus == Z_OK else {
+            return nil
+        }
+        defer { inflateEnd(&stream) }
+
+        var output = Data(count: expectedSize)
+        let status: Int32 = data.withUnsafeBytes { sourceBuffer in
+            output.withUnsafeMutableBytes { destinationBuffer in
+                guard let source = sourceBuffer.bindMemory(to: Bytef.self).baseAddress,
+                      let destination = destinationBuffer.bindMemory(to: Bytef.self).baseAddress else {
+                    return Z_DATA_ERROR
+                }
+                stream.next_in = UnsafeMutablePointer(mutating: source)
+                stream.avail_in = uInt(data.count)
+                stream.next_out = destination
+                stream.avail_out = uInt(expectedSize)
+                return inflate(&stream, Z_FINISH)
+            }
+        }
+
+        guard status == Z_STREAM_END else {
+            return nil
+        }
+        output.removeSubrange(Int(stream.total_out)..<output.count)
+        return output
+    }
+
+    private static func readUInt16(_ data: Data, at offset: Int) -> UInt16? {
+        guard offset >= 0, offset + 2 <= data.count else {
+            return nil
+        }
+        return UInt16(data[offset]) | (UInt16(data[offset + 1]) << 8)
+    }
+
+    private static func readUInt32(_ data: Data, at offset: Int) -> UInt32? {
+        guard offset >= 0, offset + 4 <= data.count else {
+            return nil
+        }
+        return UInt32(data[offset])
+            | (UInt32(data[offset + 1]) << 8)
+            | (UInt32(data[offset + 2]) << 16)
+            | (UInt32(data[offset + 3]) << 24)
+    }
+}
+
+private final class QiheDocxCharacterCounter: NSObject, XMLParserDelegate {
+    private(set) var characterCount = 0
+    private var isInsideTextNode = false
+
+    func parser(
+        _ parser: XMLParser,
+        didStartElement elementName: String,
+        namespaceURI: String?,
+        qualifiedName qName: String?,
+        attributes attributeDict: [String: String] = [:]
+    ) {
+        isInsideTextNode = elementName == "w:t" || elementName.hasSuffix(":t")
+        if elementName == "w:tab" || elementName == "w:br" {
+            characterCount += 1
+        }
+    }
+
+    func parser(_ parser: XMLParser, foundCharacters string: String) {
+        guard isInsideTextNode else {
+            return
+        }
+        characterCount += string.count
+    }
+
+    func parser(
+        _ parser: XMLParser,
+        didEndElement elementName: String,
+        namespaceURI: String?,
+        qualifiedName qName: String?
+    ) {
+        if elementName == "w:t" || elementName.hasSuffix(":t") {
+            isInsideTextNode = false
+        } else if elementName == "w:p" {
+            characterCount += 1
+        }
     }
 }

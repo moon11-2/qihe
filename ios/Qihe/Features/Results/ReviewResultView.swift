@@ -7,7 +7,7 @@ struct ReviewResultView: View {
     @EnvironmentObject private var historyStore: HistoryStore
     @EnvironmentObject private var revisionStore: RevisionStore
     let recordId: UUID
-    @State private var selectedTab: ReviewResultTab = .source
+    @State private var selectedTab: ReviewResultTab = .risks
     @State private var isExporting = false
     @State private var shareDocument: ShareDocument?
     @State private var errorMessage: String?
@@ -22,14 +22,22 @@ struct ReviewResultView: View {
         revisionStore.confirmedRiskIDs(for: recordId)
     }
 
+    private var resultNavigationTitle: String {
+        guard let payload = historyStore.record(id: recordId)?.reviewPayload else {
+            return "审查报告"
+        }
+        return payload.attachment?.filename.nilIfBlank
+            ?? payload.result.title?.nilIfBlank
+            ?? "审查报告"
+    }
+
     var body: some View {
         ZStack {
-            QiheColor.paper.ignoresSafeArea()
+            QiheColor.pageBackgroundGradient.ignoresSafeArea()
 
             if let payload = historyStore.record(id: recordId)?.reviewPayload {
                 VStack(spacing: 0) {
                     tabBar
-                    Divider().background(QiheColor.line)
 
                     ScrollViewReader { proxy in
                         ScrollView {
@@ -51,7 +59,9 @@ struct ReviewResultView: View {
                                     subjectsTab(payload.result)
                                 }
                             }
-                            .padding(20)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 16)
+                            .padding(.bottom, 10)
                         }
                         .gesture(
                             DragGesture(minimumDistance: 40, coordinateSpace: .local)
@@ -112,7 +122,7 @@ struct ReviewResultView: View {
                 .padding(24)
             }
         }
-        .navigationTitle("审查结果")
+        .navigationTitle(resultNavigationTitle)
         .qiheInlineNavigationTitle()
         .toolbar {
             ToolbarItem(placement: .qiheTopTrailing) {
@@ -141,8 +151,19 @@ struct ReviewResultView: View {
         .sheet(item: $selectedRiskForDetail) { risk in
             RiskDetailSheet(
                 risk: risk,
+                paragraphText: resolvedParagraphText(for: risk),
                 isConfirmed: confirmedRiskIDs.contains(risk.id.uuidString),
                 onDismiss: { selectedRiskForDetail = nil },
+                onConfirm: { beforeText, afterText in
+                    revisionStore.saveRevision(
+                        recordId: recordId,
+                        riskId: risk.id.uuidString,
+                        beforeText: beforeText,
+                        afterText: afterText,
+                        syncToBackend: true
+                    )
+                    selectedRiskForDetail = nil
+                },
                 onEdit: {
                     selectedRiskForDetail = nil
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
@@ -228,31 +249,44 @@ struct ReviewResultView: View {
     }
 
     private var tabBar: some View {
-        HStack(spacing: 22) {
+        HStack(spacing: 0) {
             ForEach(ReviewResultTab.allCases, id: \.self) { tab in
                 Button {
-                    selectedTab = tab
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        selectedTab = tab
+                    }
                 } label: {
                     Text(tab.title)
-                        .font(QiheFont.title(size: 15))
-                        .foregroundStyle(selectedTab == tab ? QiheColor.navy : QiheColor.muted)
-                        .padding(.vertical, 10)
+                        .font(QiheFont.body(size: 14, weight: selectedTab == tab ? .semibold : .medium))
+                        .foregroundStyle(selectedTab == tab ? QiheColor.brandBlue : QiheColor.neutral300)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.86)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: .infinity)
                         .overlay(alignment: .bottom) {
                             if selectedTab == tab {
                                 RoundedRectangle(cornerRadius: 2, style: .continuous)
-                                    .fill(QiheColor.navy)
+                                    .fill(QiheColor.brandBlue)
                                     .frame(height: 2.5)
+                                    .padding(.horizontal, 10)
                             }
                         }
                 }
                 .buttonStyle(.plain)
             }
-
-            Spacer()
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 4)
-        .background(QiheColor.paper)
+        .padding(.horizontal, 16)
+        .background {
+            Rectangle()
+                .fill(QiheColor.glassFill.opacity(0.86))
+                .background(.ultraThinMaterial)
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(QiheColor.glassStroke.opacity(0.72))
+                .frame(height: 1)
+        }
     }
 
     private func sourceTab(_ payload: ReviewHistoryPayload) -> some View {
@@ -260,7 +294,9 @@ struct ReviewResultView: View {
 
         return OriginalRiskDocumentView(
             sourceMap: sourceMap,
+            documentTitle: payload.attachment?.filename ?? payload.result.displayTitle,
             attachmentFilename: payload.attachment?.filename,
+            displayedRiskCount: payload.result.displayedRiskCount,
             confirmedRiskIDs: confirmedRiskIDs,
             flashParagraphID: flashParagraphID,
             onSelectRisk: { risk in
@@ -270,6 +306,46 @@ struct ReviewResultView: View {
                 selectedRiskForDetail = risk
             }
         )
+    }
+
+    private var noObviousRiskBanner: some View {
+        VStack(spacing: 0) {
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [QiheColor.safeGreenSoft, QiheColor.neutral0],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+
+                Image(systemName: "checkmark")
+                    .font(.system(size: 30, weight: .semibold))
+                    .foregroundStyle(QiheColor.safeGreen)
+            }
+            .frame(width: 64, height: 64)
+            .shadow(color: QiheColor.safeGreen.opacity(0.14), radius: 14, x: 0, y: 7)
+            .accessibilityHidden(true)
+
+            Text("未发现明显风险")
+                .font(QiheFont.title(size: 17))
+                .foregroundStyle(QiheColor.ink)
+                .padding(.top, 16)
+
+            Text("已逐条检查合同内容，未发现明显不利或缺失条款。签署前仍建议核对主体、金额与期限。")
+                .font(QiheFont.body(size: 14))
+                .foregroundStyle(QiheColor.muted)
+                .lineSpacing(4)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 8)
+                .frame(maxWidth: 276)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 42)
+        .padding(.bottom, 70)
+        .accessibilityElement(children: .combine)
     }
 
     /// 构建 SourceRiskMap：优先后端 blocks，回退前端分段
@@ -312,21 +388,24 @@ struct ReviewResultView: View {
     }
 
     private func riskTab(_ result: ReviewResult) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            reportHead(result)
-            statStrip(result)
-
+        Group {
             if result.risks.isEmpty {
-                PaperCard {
-                    EmptyStateView(
-                        title: "暂无风险条目",
-                        detail: "暂未识别到风险条目，仍会保留摘要、审查依据和原文。"
-                    )
-                }
+                noObviousRiskBanner
             } else {
+                VStack(alignment: .leading, spacing: 14) {
+                    reportHead(result)
+                    statStrip(result)
+
                 ForEach(result.risks) { risk in
-                    RiskReportCard(risk: risk, isHighlighted: highlightedRiskID == risk.id)
-                        .id(risk.id)
+                        RiskReportCard(
+                            risk: risk,
+                            isHighlighted: highlightedRiskID == risk.id,
+                            onShowSuggestion: {
+                                selectedRiskForDetail = risk
+                            }
+                        )
+                            .id(risk.id)
+                    }
                 }
             }
         }
@@ -348,20 +427,44 @@ struct ReviewResultView: View {
     }
 
     private func reportHead(_ result: ReviewResult) -> some View {
-        PaperCard(padding: 16) {
+        QiheGlassCard(padding: 16) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 12) {
-                    Text(result.displayTitle)
-                        .font(QiheFont.title(size: 20))
-                        .foregroundStyle(QiheColor.ink)
-                        .fixedSize(horizontal: false, vertical: true)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(result.displayTitle)
+                            .font(QiheFont.title(size: 20))
+                            .foregroundStyle(QiheColor.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Text(
+                            result.risks.isEmpty
+                                ? "审查报告已生成，原文、主体信息与审查依据均已保留。"
+                                : "审查报告已生成，请重点查看风险条款与修改建议。"
+                        )
+                            .font(QiheFont.caption(size: 12))
+                            .foregroundStyle(QiheColor.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
 
                     Spacer(minLength: 8)
 
-                    ReviewRiskGradeStamp(level: result.riskLevel ?? .pending)
+                    if result.risks.isEmpty {
+                        QiheStatusPill(
+                            text: "无明显风险",
+                            color: QiheColor.safeGreen,
+                            background: QiheColor.safeGreenSoft
+                        )
+                    } else {
+                        QiheRiskBadge(level: result.riskLevel ?? .pending)
+                    }
                 }
 
-                Text(result.summary?.nilIfBlank ?? "审查报告已生成，请重点查看风险卡片。")
+                Text(
+                    result.summary?.nilIfBlank
+                        ?? (result.risks.isEmpty
+                            ? "未识别到明确风险项，请继续核对合同关键事实。"
+                            : "审查报告已生成，请重点查看风险卡片。")
+                )
                     .font(QiheFont.body(size: 13))
                     .foregroundStyle(QiheColor.inkSoft)
                     .lineSpacing(3)
@@ -376,10 +479,10 @@ struct ReviewResultView: View {
                         .font(QiheFont.caption(size: 11.5))
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .foregroundStyle(QiheColor.navy)
+                .foregroundStyle(QiheColor.brandBlue)
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(QiheColor.navySoft.opacity(0.72))
+                .background(QiheColor.infoBlueSoft.opacity(0.82))
                 .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
             }
         }
@@ -391,12 +494,13 @@ struct ReviewResultView: View {
             ReviewStatCell(value: "\(result.score ?? scoreFallback(for: result.riskLevel))", label: "综合评分")
             ReviewStatCell(value: gradeLetter(for: result.riskLevel), label: "风险等级", color: (result.riskLevel ?? .pending).foreground)
         }
-        .background(QiheColor.card)
+        .background(QiheColor.glassFill)
         .clipShape(RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous)
-                .stroke(QiheColor.lineStrong, lineWidth: 1)
+                .stroke(QiheColor.glassStroke, lineWidth: 1)
         )
+        .shadow(color: QiheColor.shadowNavySoft, radius: 8, x: 0, y: 2)
     }
 
     private func subjectsTab(_ result: ReviewResult) -> some View {
@@ -413,11 +517,11 @@ struct ReviewResultView: View {
 
     private func reviewActionBar(_ payload: ReviewHistoryPayload) -> some View {
         HStack(spacing: 10) {
-            QiheSecondaryButton(title: "定位", systemImage: "location.magnifyingglass") {
+            ReviewActionIconButton(title: "定位", systemImage: "location.magnifyingglass") {
                 showLocateDialog = true
             }
 
-            QiheSecondaryButton(title: "继续修改", systemImage: "square.and.pencil") {
+            ReviewActionIconButton(title: "修改", systemImage: "square.and.pencil") {
                 guard requireSignIn() else {
                     return
                 }
@@ -429,20 +533,25 @@ struct ReviewResultView: View {
                 )
             }
 
-            QihePrimaryButton(title: "追问 AI", systemImage: "bubble.left.and.text.bubble.right") {
+            QihePrimaryButton(title: "追问 AI", systemImage: "sparkles") {
                 guard requireSignIn() else {
                     return
                 }
                 appState.path.append(.chat(localRecordId: nil, initialMessage: followUpPrompt(for: payload)))
             }
+            .frame(minWidth: 138)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 10)
-        .padding(.bottom, 12)
-        .background(QiheColor.paper)
+        .padding(.horizontal, 18)
+        .padding(.top, 12)
+        .padding(.bottom, 14)
+        .background {
+            Rectangle()
+                .fill(QiheColor.glassFill.opacity(0.92))
+                .background(.ultraThinMaterial)
+        }
         .overlay(alignment: .top) {
             Rectangle()
-                .fill(QiheColor.line)
+                .fill(QiheColor.glassStroke.opacity(0.76))
                 .frame(height: 1)
         }
     }
@@ -711,6 +820,33 @@ private struct ReviewStatCell: View {
     }
 }
 
+private struct ReviewActionIconButton: View {
+    let title: String
+    let systemImage: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 3) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 18, weight: .semibold))
+                    .frame(height: 20)
+
+                Text(title)
+                    .font(QiheFont.micro(size: 9.5, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+            }
+            .foregroundStyle(QiheColor.brandBlue)
+            .frame(width: 48, height: 48)
+            .background(QiheColor.infoBlueSoft)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+    }
+}
+
 struct SourceRiskMap {
     let paragraphs: [AnnotatedSourceParagraph]
     let unmatchedRisks: [RiskItem]
@@ -814,19 +950,26 @@ struct UnlocatedRiskNotice: View {
 /// 颜色规则：
 /// - 高风险 → 红色（seal）
 /// - 中风险 → 橙色（amber）
-/// - 低风险 → 蓝色（pine）
-/// - 待确认/未评级 → 灰色（navy）
+/// - 低风险/已修改 → 绿色（pine）
+/// - 待确认/未评级 → 信息蓝（navy）
 struct OriginalRiskDocumentView: View {
     let sourceMap: SourceRiskMap
+    var documentTitle: String
     var attachmentFilename: String?
+    var displayedRiskCount: Int
     var confirmedRiskIDs: Set<String> = []
     var flashParagraphID: Int?
     var onSelectRisk: (RiskItem) -> Void
     var onFocusUnlocatedRisk: (RiskItem) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            QiheSectionHeader(title: "原文", subtitle: attachmentFilename)
+        VStack(alignment: .leading, spacing: 14) {
+            ContractMetaCard(
+                title: documentTitle,
+                attachmentFilename: attachmentFilename,
+                characterCount: contractCharacterCount,
+                riskCount: displayedRiskCount
+            )
 
             if !sourceMap.unmatchedRisks.isEmpty {
                 UnlocatedRiskNotice(risks: sourceMap.unmatchedRisks) { risk in
@@ -834,26 +977,35 @@ struct OriginalRiskDocumentView: View {
                 }
             }
 
-            PaperCard(padding: 12) {
-                VStack(alignment: .leading, spacing: 0) {
-                    let lastParagraphID = sourceMap.paragraphs.last?.id
-
-                    ForEach(sourceMap.paragraphs) { paragraph in
-                        SourceParagraphBlock(
-                            paragraph: paragraph,
-                            isConfirmed: paragraph.risks.contains(where: { confirmedRiskIDs.contains($0.id.uuidString) }),
-                            isFlashing: flashParagraphID == paragraph.id,
-                            onSelectRisk: onSelectRisk
-                        )
-                        .id(paragraph.id)
-
-                        if paragraph.id != lastParagraphID {
-                            Divider().background(QiheColor.line).padding(.vertical, 4)
-                        }
-                    }
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(sourceMap.paragraphs) { paragraph in
+                    SourceParagraphBlock(
+                        paragraph: paragraph,
+                        isConfirmed: paragraph.risks.contains(where: { confirmedRiskIDs.contains($0.id.uuidString) }),
+                        isFlashing: flashParagraphID == paragraph.id,
+                        onSelectRisk: onSelectRisk
+                    )
+                    .id(paragraph.id)
                 }
             }
+            .padding(16)
+            .background(QiheColor.neutral0.opacity(0.98))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(QiheColor.glassStroke.opacity(0.55), lineWidth: 1)
+            )
+            .shadow(color: QiheColor.shadowNavySoft, radius: 9, x: 0, y: 3)
         }
+    }
+
+    private var contractCharacterCount: Int {
+        sourceMap.paragraphs
+            .map(\.text)
+            .joined()
+            .unicodeScalars
+            .filter { !CharacterSet.whitespacesAndNewlines.contains($0) }
+            .count
     }
 }
 
@@ -914,24 +1066,18 @@ private struct SourceParagraphBlock: View {
             if paragraph.primaryRisk != nil {
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
                     .fill(sideBarColor)
-                    .frame(width: 3.5)
-                    .padding(.vertical, 2)
+                    .frame(width: 4)
+                    .padding(.vertical, 1)
             }
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: paragraph.risks.isEmpty ? 0 : 8) {
                 if !paragraph.risks.isEmpty {
                     FlowLayout(spacing: 6) {
                         if isConfirmed {
-                            Text("已修改")
-                                .font(QiheFont.caption(size: 10.5, weight: .semibold))
-                                .foregroundStyle(QiheColor.pine)
-                                .padding(.horizontal, 7)
-                                .frame(height: 23)
-                                .background(QiheColor.pineSoft)
-                                .clipShape(Capsule())
+                            SourceRiskStatePill(title: "已修改", color: QiheColor.safeGreen, background: QiheColor.safeGreenSoft)
                         } else {
                             ForEach(Array(paragraph.risks.prefix(3))) { risk in
-                                SourceRiskLevelPill(level: risk.riskLevel)
+                                SourceRiskLevelPill(risk: risk)
                             }
                         }
 
@@ -948,20 +1094,67 @@ private struct SourceParagraphBlock: View {
                 }
 
                 Text(paragraph.text)
-                    .font(QiheFont.body(size: 14))
+                    .font(QiheFont.contractDocument(size: 15))
                     .foregroundStyle(QiheColor.inkSoft)
+                    .lineSpacing(QiheTypography.bodyLineSpacing)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.horizontal, paragraph.primaryRisk == nil ? 0 : 12)
-        .padding(.vertical, paragraph.primaryRisk == nil ? 8 : 12)
+        .padding(.vertical, paragraph.primaryRisk == nil ? 2 : 12)
+        .padding(.bottom, paragraph.primaryRisk == nil ? 6 : 0)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(paragraph.primaryRisk == nil ? Color.clear : bgColor.opacity(0.74))
+        .background(paragraph.primaryRisk == nil ? Color.clear : bgColor.opacity(0.62))
         .clipShape(RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous)
-                .stroke(paragraph.primaryRisk == nil ? Color.clear : sideBarColor.opacity(0.18), lineWidth: 1)
+                .stroke(paragraph.primaryRisk == nil ? Color.clear : sideBarColor.opacity(0.12), lineWidth: 1)
         )
+    }
+}
+
+private struct ContractMetaCard: View {
+    let title: String
+    var attachmentFilename: String?
+    let characterCount: Int
+    let riskCount: Int
+
+    var body: some View {
+        QiheGlassCard(padding: 14) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(title)
+                        .font(QiheFont.h3(size: 17, weight: .semibold))
+                        .foregroundStyle(QiheColor.ink)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.86)
+
+                    Spacer(minLength: 8)
+
+                    QiheRiskBadge(level: riskCount > 0 ? .pending : .low, text: "\(riskCount) 风险")
+                }
+
+                Text("共 \(formattedCharacterCount) 字 · 审查视图 · 这份合同有 \(riskCount) 处需要注意")
+                    .font(QiheFont.micro(size: 11, weight: .medium))
+                    .foregroundStyle(QiheColor.inkSoft)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.86)
+
+                if let attachmentFilename {
+                    Label(attachmentFilename, systemImage: "doc.text")
+                        .font(QiheFont.micro(size: 10.5, weight: .medium))
+                        .foregroundStyle(QiheColor.muted)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.82)
+                }
+            }
+        }
+    }
+
+    private var formattedCharacterCount: String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        return formatter.string(from: NSNumber(value: characterCount)) ?? "\(characterCount)"
     }
 }
 
@@ -969,11 +1162,11 @@ private struct SourceParagraphBlock: View {
 private func sourceRiskColor(for level: RiskLevel) -> Color {
     switch level {
     case .high:
-        return QiheColor.seal
+        return Color(hex: 0xEA580C)
     case .medium:
-        return QiheColor.amber
+        return QiheColor.riskOrange
     case .low:
-        return QiheColor.pine
+        return QiheColor.brandBlue
     case .pending, .unknown:
         return QiheColor.navy
     }
@@ -983,27 +1176,50 @@ private func sourceRiskColor(for level: RiskLevel) -> Color {
 private func sourceRiskBackgroundColor(for level: RiskLevel) -> Color {
     switch level {
     case .high:
-        return QiheColor.sealSoft
+        return Color(hex: 0xFFF5ED)
     case .medium:
-        return QiheColor.amberSoft
+        return QiheColor.riskOrangeSoft
     case .low:
-        return QiheColor.pineSoft
+        return QiheColor.infoBlueSoft
     case .pending, .unknown:
         return QiheColor.navySoft
     }
 }
 
 private struct SourceRiskLevelPill: View {
-    let level: RiskLevel
+    let risk: RiskItem
 
     var body: some View {
-        Text(level.label)
-            .font(QiheFont.caption(size: 10.5, weight: .semibold))
-            .foregroundStyle(sourceRiskColor(for: level))
-            .padding(.horizontal, 7)
-            .frame(height: 23)
-            .background(sourceRiskBackgroundColor(for: level))
-            .clipShape(Capsule())
+        QiheRiskBadge(level: risk.riskLevel, text: label)
+    }
+
+    private var label: String {
+        if let clause = risk.clauseTitle?.nilIfBlank ?? risk.clauseId?.nilIfBlank {
+            return "\(risk.riskLevel.label) · \(clause.truncated(to: 10))"
+        }
+        return "\(risk.riskLevel.label)条款"
+    }
+}
+
+private struct SourceRiskStatePill: View {
+    let title: String
+    let color: Color
+    let background: Color
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 10.5, weight: .semibold))
+            Text(title)
+        }
+        .font(QiheFont.caption(size: 10.5, weight: .semibold))
+        .foregroundStyle(color)
+        .lineLimit(1)
+        .minimumScaleFactor(0.82)
+        .padding(.horizontal, 8)
+        .frame(height: 24)
+        .background(background)
+        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.badge, style: .continuous))
     }
 }
 
@@ -1556,92 +1772,186 @@ private extension String {
 private struct RiskReportCard: View {
     let risk: RiskItem
     var isHighlighted = false
+    let onShowSuggestion: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 11) {
-            HStack(alignment: .top, spacing: 10) {
-                Text(risk.displayTitle)
-                    .font(QiheFont.title(size: 15))
-                    .foregroundStyle(QiheColor.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Spacer(minLength: 8)
-
+            HStack(spacing: 8) {
                 Text(risk.riskLevel.label)
-                    .font(QiheFont.caption(size: 10.5, weight: .semibold))
-                    .foregroundStyle(risk.riskLevel.foreground)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.78)
-                    .padding(.horizontal, 7)
+                    .font(QiheFont.caption(size: 12, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 9)
                     .frame(height: 24)
-                    .background(risk.riskLevel.background)
-                    .clipShape(Capsule())
+                    .background(referenceTint)
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+
+                Text(clauseHeading)
+                    .font(QiheFont.body(size: 14, weight: .semibold))
+                    .foregroundStyle(QiheColor.ink)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.84)
+
+                Spacer(minLength: 0)
             }
 
-            if let clause = risk.clause?.nilIfBlank {
-                Text("涉及条款：\(clause)")
-                    .font(QiheFont.caption(size: 11.5))
-                    .foregroundStyle(QiheColor.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            if let analysis = risk.displayAnalysis {
-                LabeledText(label: "风险分析", text: analysis)
-            }
-
-            if let suggestion = risk.displaySuggestion {
-                LabeledText(label: "修订建议", text: suggestion)
-            }
-
-            if let replacement = risk.suggestedReplacement?.nilIfBlank {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("修改")
-                        .font(QiheFont.caption(size: 11, weight: .semibold))
-                        .foregroundStyle(QiheColor.seal)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: QiheRadius.xs, style: .continuous)
-                                .stroke(QiheColor.seal, lineWidth: 1)
-                        )
-
-                    Text(replacement)
-                        .font(QiheFont.body(size: 13))
-                        .foregroundStyle(QiheColor.inkSoft)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(.top, 2)
-            }
-
-            if let legalBasis = risk.displayLegalBasis {
-                HStack(alignment: .top, spacing: 7) {
-                    Image(systemName: "text.book.closed")
-                        .font(.system(size: 14, weight: .medium))
-                    Text("法条依据 \(legalBasis)")
-                        .font(QiheFont.caption(size: 11.5))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .foregroundStyle(QiheColor.navy)
-                .padding(10)
+            Text(originalContent)
+                .font(QiheFont.body(size: 14))
+                .foregroundStyle(QiheColor.inkSoft)
+                .lineSpacing(5)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 13)
+                .padding(.vertical, 11)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(QiheColor.navySoft)
-                .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
+                .background(Color(hex: 0xF4F6FA))
+                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+
+            if let analysis = risk.displayAnalysis?.nilIfBlank {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.circle")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(referenceTint)
+                        .padding(.top, 1)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("风险描述")
+                            .font(QiheFont.caption(size: 12.5, weight: .semibold))
+                            .foregroundStyle(referenceTint)
+
+                        Text(analysis)
+                            .font(QiheFont.body(size: 13.5))
+                            .foregroundStyle(referenceTextTint)
+                            .lineSpacing(4)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(.top, 1)
+                .padding(.horizontal, 1)
+            }
+
+            HStack {
+                Spacer(minLength: 0)
+
+                Button(action: onShowSuggestion) {
+                    Label("AI 修改建议", systemImage: "square.and.pencil")
+                        .font(QiheFont.caption(size: 12, weight: .semibold))
+                        .foregroundStyle(QiheColor.brandBlue.opacity(0.72))
+                        .padding(.horizontal, 12)
+                        .frame(height: 30)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .stroke(QiheColor.brandBlue.opacity(0.24), lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
             }
         }
         .padding(14)
-        .padding(.leading, 2)
-        .background(isHighlighted ? QiheColor.navySoft.opacity(0.72) : QiheColor.card)
-        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous))
+        .padding(.leading, 4)
+        .background(isHighlighted ? QiheColor.infoBlueSoft.opacity(0.76) : QiheColor.neutral0.opacity(0.98))
+        .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
         .overlay(alignment: .leading) {
-            Rectangle()
-                .fill(isHighlighted ? QiheColor.navy : risk.riskLevel.foreground)
-                .frame(width: isHighlighted ? 5 : 3.5)
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(isHighlighted ? QiheColor.brandBlue : referenceTint)
+                .frame(width: isHighlighted ? 5 : 4)
         }
         .overlay(
-            RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous)
-                .stroke(isHighlighted ? QiheColor.navy.opacity(0.52) : QiheColor.line, lineWidth: isHighlighted ? 2 : 1)
+            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .stroke(
+                    isHighlighted ? QiheColor.brandBlue.opacity(0.42) : referenceTint.opacity(0.28),
+                    lineWidth: isHighlighted ? 1.5 : 1
+                )
         )
+        .shadow(color: isHighlighted ? QiheColor.shadowBlue.opacity(0.18) : QiheColor.shadowNavySoft, radius: 9, x: 0, y: 3)
         .animation(.easeInOut(duration: 0.2), value: isHighlighted)
+    }
+
+    private var clauseHeading: String {
+        risk.clauseTitle?.nilIfBlank
+            ?? risk.clauseId?.nilIfBlank
+            ?? risk.displayTitle
+    }
+
+    private var originalContent: String {
+        risk.originalExcerpt?.nilIfBlank
+            ?? risk.originalText?.nilIfBlank
+            ?? risk.clause?.nilIfBlank
+            ?? "暂无可展示的条款原文。"
+    }
+
+    private var referenceTint: Color {
+        switch risk.riskLevel {
+        case .high:
+            return Color(hex: 0xEA580C)
+        case .medium:
+            return QiheColor.riskOrange
+        case .low:
+            return QiheColor.brandBlue
+        case .pending, .unknown:
+            return QiheColor.muted
+        }
+    }
+
+    private var referenceTextTint: Color {
+        switch risk.riskLevel {
+        case .high:
+            return Color(hex: 0x9A3412)
+        case .medium:
+            return Color(hex: 0x92400E)
+        case .low:
+            return Color(hex: 0x1E40AF)
+        case .pending, .unknown:
+            return QiheColor.inkSoft
+        }
+    }
+}
+
+private struct RiskReportSection: View {
+    let title: String
+    let icon: String
+    let text: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(title, systemImage: icon)
+                .font(QiheFont.caption(size: 12, weight: .semibold))
+                .foregroundStyle(QiheColor.brandBlue)
+
+            Text(text)
+                .font(QiheFont.body(size: 13.5))
+                .foregroundStyle(QiheColor.inkSoft)
+                .lineSpacing(4)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(QiheColor.infoBlueSoft.opacity(0.45))
+        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
+    }
+}
+
+private struct RiskReplacementPreview: View {
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text("建议")
+                .font(QiheFont.caption(size: 11, weight: .semibold))
+                .foregroundStyle(QiheColor.safeGreen)
+                .padding(.horizontal, 7)
+                .frame(height: 24)
+                .background(QiheColor.safeGreenSoft)
+                .clipShape(RoundedRectangle(cornerRadius: QiheRadius.badge, style: .continuous))
+
+            Text(text)
+                .font(QiheFont.body(size: 13.5))
+                .foregroundStyle(QiheColor.inkSoft)
+                .lineSpacing(4)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(QiheColor.safeGreenSoft.opacity(0.55))
+        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
     }
 }
 
@@ -1720,7 +2030,10 @@ private struct PartialSubjectNotice: View {
 struct EmptySubjectBox: View {
     var body: some View {
         VStack(spacing: 10) {
-            BlankSealMark(size: 46)
+            QiheLogoMark(size: 30)
+                .frame(width: 46, height: 46)
+                .background(QiheColor.infoBlueSoft)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
             Text("未识别到乙方、金额或期限等信息，请确认合同文本是否完整。")
                 .font(QiheFont.body(size: 12.5))
@@ -1805,120 +2118,211 @@ struct FlowLayout: Layout {
 
 struct RiskDetailSheet: View {
     let risk: RiskItem
+    let paragraphText: String
     let isConfirmed: Bool
     let onDismiss: () -> Void
+    let onConfirm: (_ beforeText: String, _ afterText: String) -> Void
     let onEdit: () -> Void
 
+    private var originalContent: String {
+        risk.originalExcerpt?.nilIfBlank
+            ?? risk.originalText?.nilIfBlank
+            ?? paragraphText
+    }
+
+    private var suggestionContent: String? {
+        risk.suggestedReplacement?.nilIfBlank
+            ?? risk.revisionSuggestion?.nilIfBlank
+            ?? risk.suggestion?.nilIfBlank
+    }
+
     var body: some View {
-        NavigationStack {
+        ZStack {
+            QiheColor.pageBackgroundGradient
+                .ignoresSafeArea()
+
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    HStack(alignment: .top, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(risk.displayTitle)
-                                .font(QiheFont.title(size: 18))
-                                .foregroundStyle(QiheColor.ink)
-                                .fixedSize(horizontal: false, vertical: true)
+                    RiskSheetHandle()
 
-                            if isConfirmed {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .font(.system(size: 13, weight: .semibold))
-                                    Text("已修改")
-                                        .font(QiheFont.caption(size: 12, weight: .semibold))
-                                }
-                                .foregroundStyle(QiheColor.pine)
-                            }
-                        }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("修改建议")
+                            .font(QiheFont.title(size: 20))
+                            .foregroundStyle(QiheColor.ink)
 
-                        Spacer(minLength: 8)
-
-                        Text(risk.riskLevel.label)
-                            .font(QiheFont.caption(size: 11, weight: .semibold))
-                            .foregroundStyle(risk.riskLevel.foreground)
-                            .padding(.horizontal, 8)
-                            .frame(height: 26)
-                            .background(risk.riskLevel.background)
-                            .clipShape(Capsule())
+                        Text(isConfirmed ? "这条建议已覆盖原文，可继续查看或编辑。" : "我按当前立场整理了一版，可以直接覆盖原文。")
+                            .font(QiheFont.body(size: 14))
+                            .foregroundStyle(QiheColor.inkSoft)
+                            .lineSpacing(3)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
-                    Divider().background(QiheColor.line)
+                    HStack(alignment: .center, spacing: 8) {
+                        QiheRiskBadge(level: risk.riskLevel, text: "\(risk.riskLevel.label) · \(risk.displayTitle)")
 
-                    if let analysis = risk.displayAnalysis {
-                        detailSection(title: "风险分析", icon: "magnifyingglass", content: analysis)
-                    }
-
-                    if let suggestion = risk.displaySuggestion {
-                        detailSection(title: "修改建议", icon: "lightbulb", content: suggestion)
-                    }
-
-                    if let replacement = risk.suggestedReplacement?.nilIfBlank {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Label("建议替换条款", systemImage: "arrow.triangle.swap")
-                                .font(QiheFont.caption(size: 12, weight: .semibold))
-                                .foregroundStyle(QiheColor.seal)
-
-                            Text(replacement)
-                                .font(QiheFont.body(size: 14))
-                                .foregroundStyle(QiheColor.inkSoft)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .padding(12)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(QiheColor.sealSoft.opacity(0.5))
-                                .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
+                        if isConfirmed {
+                            QiheStatusPill(
+                                text: "已修改",
+                                color: QiheColor.safeGreen,
+                                background: QiheColor.safeGreenSoft
+                            )
                         }
                     }
 
                     if let legalBasis = risk.displayLegalBasis {
-                        HStack(alignment: .top, spacing: 8) {
-                            Image(systemName: "text.book.closed")
-                                .font(.system(size: 14, weight: .medium))
-                                .padding(.top, 1)
-                            Text("法条依据：\(legalBasis)")
-                                .font(QiheFont.caption(size: 12))
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .foregroundStyle(QiheColor.navy)
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(QiheColor.navySoft)
-                        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
+                        RiskSheetInfoRow(
+                            title: "涉及条款",
+                            systemImage: "text.book.closed",
+                            content: legalBasis
+                        )
+                    }
+
+                    RiskSheetTextBlock(
+                        title: "原文内容",
+                        content: originalContent,
+                        tint: risk.riskLevel.foreground,
+                        background: risk.riskLevel.background.opacity(0.62),
+                        systemImage: "doc.text"
+                    )
+
+                    if let suggestionContent {
+                        RiskSheetTextBlock(
+                            title: "AI 修改建议",
+                            content: suggestionContent,
+                            tint: QiheColor.brandBlue,
+                            background: QiheColor.infoBlueSoft.opacity(0.72),
+                            systemImage: "sparkles"
+                        )
+                    }
+
+                    if let analysis = risk.displayAnalysis {
+                        RiskSheetInfoRow(
+                            title: "风险分析",
+                            systemImage: "magnifyingglass",
+                            content: analysis
+                        )
                     }
                 }
-                .padding(20)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 18)
             }
-            .background(QiheColor.paper)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("关闭") { onDismiss() }
-                        .foregroundStyle(QiheColor.navy)
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        onEdit()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "square.and.pencil")
-                            Text("修改")
+            .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 8) {
+                    QihePrimaryButton(
+                        title: "确认覆盖原文",
+                        systemImage: "checkmark",
+                        isDisabled: suggestionContent?.trimmedForInput.isEmpty ?? true
+                    ) {
+                        guard let afterText = suggestionContent?.trimmedForInput,
+                              !afterText.isEmpty else { return }
+                        onConfirm(originalContent, afterText)
+                    }
+
+                    HStack(spacing: 10) {
+                        QiheSecondaryButton(title: "编辑建议", systemImage: "square.and.pencil") {
+                            onEdit()
                         }
-                        .font(QiheFont.body(size: 14, weight: .semibold))
-                        .foregroundStyle(QiheColor.pine)
+
+                        QiheSecondaryButton(title: "取消") {
+                            onDismiss()
+                        }
                     }
                 }
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .padding(.bottom, 10)
+                .background(.ultraThinMaterial)
             }
         }
+        .background(QiheColor.neutral0)
     }
+}
 
-    private func detailSection(title: String, icon: String, content: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label(title, systemImage: icon)
-                .font(QiheFont.caption(size: 12, weight: .semibold))
-                .foregroundStyle(QiheColor.muted)
+private struct RiskSheetHandle: View {
+    var body: some View {
+        Capsule()
+            .fill(QiheColor.neutral300)
+            .frame(width: 36, height: 4)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 12)
+    }
+}
+
+private struct RiskSheetInfoRow: View {
+    let title: String
+    let systemImage: String
+    let content: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: systemImage)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(QiheColor.brandBlue)
+                .frame(width: 22, height: 22)
+                .background(QiheColor.infoBlueSoft)
+                .clipShape(RoundedRectangle(cornerRadius: QiheRadius.badge, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(QiheFont.caption(size: 11, weight: .semibold))
+                    .foregroundStyle(QiheColor.muted)
+                Text(content)
+                    .font(QiheFont.body(size: 13))
+                    .foregroundStyle(QiheColor.inkSoft)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(QiheColor.neutral0.opacity(0.86))
+        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.input, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: QiheRadius.input, style: .continuous)
+                .stroke(QiheColor.glassStroke, lineWidth: 1)
+        )
+    }
+}
+
+private struct RiskSheetTextBlock: View {
+    let title: String
+    let content: String
+    let tint: Color
+    let background: Color
+    var systemImage: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                Text(title)
+            }
+            .font(QiheFont.caption(size: 11, weight: .semibold))
+            .foregroundStyle(tint)
+
             Text(content)
                 .font(QiheFont.body(size: 14))
                 .foregroundStyle(QiheColor.inkSoft)
+                .lineSpacing(5)
                 .fixedSize(horizontal: false, vertical: true)
-                .lineSpacing(4)
+                .padding(.vertical, 12)
+                .padding(.leading, 14)
+                .padding(.trailing, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(background)
+                .clipShape(RoundedRectangle(cornerRadius: QiheRadius.input, style: .continuous))
+                .overlay(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .fill(tint)
+                        .frame(width: 4)
+                }
+                .overlay(
+                    RoundedRectangle(cornerRadius: QiheRadius.input, style: .continuous)
+                        .stroke(tint.opacity(0.18), lineWidth: 1)
+                )
         }
     }
 }
@@ -1960,96 +2364,98 @@ struct RiskEditSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
+        ZStack {
+            QiheColor.pageBackgroundGradient
+                .ignoresSafeArea()
+
             VStack(spacing: 0) {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text(risk.displayTitle)
-                            .font(QiheFont.title(size: 16))
-                            .foregroundStyle(QiheColor.ink)
-                        Spacer()
-                        Text(risk.riskLevel.label)
-                            .font(QiheFont.caption(size: 11, weight: .semibold))
-                            .foregroundStyle(risk.riskLevel.foreground)
-                            .padding(.horizontal, 7)
-                            .frame(height: 24)
-                            .background(risk.riskLevel.background)
-                            .clipShape(Capsule())
-                    }
-                    Text("修改后将替换原文对应段落")
-                        .font(QiheFont.caption(size: 11.5))
-                        .foregroundStyle(QiheColor.muted)
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 16)
-                .padding(.bottom, 12)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        RiskSheetHandle()
 
-                Divider().background(QiheColor.line)
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(alignment: .top, spacing: 10) {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("编辑修改建议")
+                                        .font(QiheFont.title(size: 20))
+                                        .foregroundStyle(QiheColor.ink)
+                                    Text("确认后将替换原文对应段落。")
+                                        .font(QiheFont.body(size: 13))
+                                        .foregroundStyle(QiheColor.muted)
+                                }
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("原文")
-                        .font(QiheFont.caption(size: 11, weight: .semibold))
-                        .foregroundStyle(QiheColor.muted)
-                        .padding(.horizontal, 20)
+                                Spacer(minLength: 8)
 
-                    Text(beforeText)
-                        .font(QiheFont.body(size: 13))
-                        .foregroundStyle(QiheColor.inkSoft)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(QiheColor.card.opacity(0.6))
-                        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
-                        .padding(.horizontal, 20)
-                }
+                                QiheRiskBadge(level: risk.riskLevel)
+                            }
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("修改后")
-                        .font(QiheFont.caption(size: 11, weight: .semibold))
-                        .foregroundStyle(QiheColor.pine)
-                        .padding(.horizontal, 20)
+                            Text(risk.displayTitle)
+                                .font(QiheFont.caption(size: 12, weight: .semibold))
+                                .foregroundStyle(QiheColor.inkSoft)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
 
-                    TextEditor(text: $editedText)
-                        .font(QiheFont.body(size: 14))
-                        .focused($isTextEditorFocused)
-                        .scrollContentBackground(.hidden)
-                        .padding(10)
-                        .frame(minHeight: 180)
-                        .background(QiheColor.card)
-                        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: QiheRadius.sm, style: .continuous)
-                                .stroke(QiheColor.pine.opacity(0.3), lineWidth: 1.5)
+                        RiskSheetTextBlock(
+                            title: "原文内容",
+                            content: beforeText,
+                            tint: risk.riskLevel.foreground,
+                            background: risk.riskLevel.background.opacity(0.62),
+                            systemImage: "doc.text"
                         )
-                        .padding(.horizontal, 20)
-                }
-                .padding(.top, 16)
 
-                Spacer(minLength: 0)
-            }
-            .background(QiheColor.paper)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { onDismiss() }
-                        .foregroundStyle(QiheColor.navy)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Label("AI 修改建议", systemImage: "sparkles")
+                                .font(QiheFont.caption(size: 11, weight: .semibold))
+                                .foregroundStyle(QiheColor.brandBlue)
+
+                            TextEditor(text: $editedText)
+                                .font(QiheFont.body(size: 14))
+                                .foregroundStyle(QiheColor.ink)
+                                .focused($isTextEditorFocused)
+                                .scrollContentBackground(.hidden)
+                                .padding(.vertical, 8)
+                                .padding(.leading, 10)
+                                .padding(.trailing, 8)
+                                .frame(minHeight: 168)
+                                .background(QiheColor.infoBlueSoft.opacity(0.72))
+                                .clipShape(RoundedRectangle(cornerRadius: QiheRadius.input, style: .continuous))
+                                .overlay(alignment: .leading) {
+                                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                        .fill(QiheColor.brandBlue)
+                                        .frame(width: 4)
+                                }
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: QiheRadius.input, style: .continuous)
+                                        .stroke(QiheColor.brandBlue.opacity(0.22), lineWidth: 1)
+                                )
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 18)
                 }
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
+
+                VStack(spacing: 8) {
+                    QihePrimaryButton(
+                        title: "确认覆盖原文",
+                        systemImage: "checkmark",
+                        isDisabled: editedText.trimmedForInput.isEmpty
+                    ) {
                         let trimmed = editedText.trimmedForInput
                         guard !trimmed.isEmpty else { return }
                         onConfirm(beforeText, trimmed)
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "checkmark")
-                            Text("确认修改")
-                        }
-                        .font(QiheFont.body(size: 14, weight: .semibold))
-                        .foregroundStyle(QiheColor.pine)
                     }
-                    .disabled(editedText.trimmedForInput.isEmpty)
+
+                    QiheSecondaryButton(title: "取消") {
+                        onDismiss()
+                    }
                 }
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .padding(.bottom, 10)
+                .background(.ultraThinMaterial)
             }
-            .onAppear { isTextEditorFocused = true }
         }
+        .background(QiheColor.neutral0)
+        .onAppear { isTextEditorFocused = true }
     }
 }

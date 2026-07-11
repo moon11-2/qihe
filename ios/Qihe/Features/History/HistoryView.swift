@@ -8,41 +8,49 @@ struct HistoryView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 14) {
-                    historyHeader
+            ZStack(alignment: .topTrailing) {
+                QiheColor.pageBackgroundGradient.ignoresSafeArea()
 
-                    if !historyStore.records.isEmpty {
-                        filterPicker
-                    }
+                Circle()
+                    .fill(QiheColor.brandLight.opacity(0.12))
+                    .frame(width: 210, height: 210)
+                    .blur(radius: 8)
+                    .offset(x: 74, y: -94)
+                    .accessibilityHidden(true)
 
-                    if historyStore.records.isEmpty {
-                        PaperCard {
-                            EmptyStateView(
+                ScrollView {
+                    VStack(spacing: 14) {
+                        historyHeader
+
+                        if !historyStore.records.isEmpty {
+                            filterPicker
+                        }
+
+                        if historyStore.records.isEmpty {
+                            historyEmptyState(
                                 title: "暂无历史记录",
                                 detail: "审查、生成或过程对话完成后，会在这里留下可继续打开的本地记录。"
                             )
-                        }
-                    } else if filteredRecords.isEmpty {
-                        PaperCard {
-                            EmptyStateView(
+                        } else if filteredRecords.isEmpty {
+                            historyEmptyState(
                                 title: "暂无\(selectedFilter.title)记录",
                                 detail: "切换到全部，或完成新的\(selectedFilter.title)后再回来查看。"
                             )
-                        }
-                    } else {
-                        ForEach(filteredRecords) { record in
-                            HistoryRecordRow(record: record) {
-                                appState.openHistoryRecord(record)
+                        } else {
+                            LazyVStack(spacing: 11) {
+                                ForEach(filteredRecords) { record in
+                                    HistoryRecordRow(record: record) {
+                                        appState.openHistoryRecord(record)
+                                    }
+                                }
                             }
                         }
                     }
+                    .padding(.horizontal, 18)
+                    .padding(.top, 14)
+                    .padding(.bottom, QiheLayout.rootTabBottomInset)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 6)
-                .padding(.bottom, QiheLayout.rootTabBottomInset)
             }
-            .background(QiheColor.paper.ignoresSafeArea())
             .confirmationDialog(
                 "清空全部历史？",
                 isPresented: $isClearConfirmationPresented,
@@ -64,44 +72,90 @@ struct HistoryView: View {
     }
 
     private var historyHeader: some View {
-        HStack(alignment: .center) {
-            Text("历史")
-                .font(QiheFont.title(size: 34))
-                .foregroundStyle(QiheColor.ink)
-                .lineLimit(1)
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("历史")
+                    .font(QiheFont.body(size: 22, weight: .bold))
+                    .foregroundStyle(QiheColor.ink)
+
+                Text(historyStore.records.isEmpty ? "本地记录" : "共 \(historyStore.records.count) 条本地记录")
+                    .font(QiheFont.caption(size: 12))
+                    .foregroundStyle(QiheColor.muted)
+            }
 
             Spacer()
 
             Button {
                 isClearConfirmationPresented = true
             } label: {
-                Text("清空")
-                    .font(QiheFont.body(size: 15, weight: .semibold))
-                    .foregroundStyle(historyStore.records.isEmpty ? QiheColor.muted : QiheColor.seal)
+                Label("清空", systemImage: "trash")
+                    .font(QiheFont.caption(size: 13, weight: .semibold))
+                    .foregroundStyle(historyStore.records.isEmpty ? QiheColor.muted : QiheColor.riskRed)
                     .lineLimit(1)
-                    .padding(.horizontal, 16)
-                    .frame(height: 38)
-                    .background(QiheColor.card.opacity(historyStore.records.isEmpty ? 0.55 : 1))
-                    .clipShape(Capsule())
-                    .contentShape(Capsule())
+                    .minimumScaleFactor(0.82)
+                    .padding(.horizontal, 12)
+                    .frame(height: 36)
+                    .background(QiheColor.glassFill.opacity(historyStore.records.isEmpty ? 0.64 : 1))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(QiheColor.glassStroke, lineWidth: 1)
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
             .buttonStyle(.plain)
-            .shadow(color: .black.opacity(historyStore.records.isEmpty ? 0 : 0.04), radius: 12, x: 0, y: 6)
+            .shadow(color: historyStore.records.isEmpty ? .clear : QiheColor.shadowNavySoft, radius: 10, x: 0, y: 3)
             .disabled(historyStore.records.isEmpty)
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 4)
-        .padding(.bottom, 10)
+        .padding(.vertical, 6)
     }
 
     private var filterPicker: some View {
-        Picker("历史类型", selection: $selectedFilter) {
+        HStack(spacing: 4) {
             ForEach(HistoryFilter.allCases) { filter in
-                Text(filter.title).tag(filter)
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        selectedFilter = filter
+                    }
+                } label: {
+                    Text(filter.title)
+                        .font(QiheFont.caption(size: 13, weight: selectedFilter == filter ? .semibold : .medium))
+                        .foregroundStyle(selectedFilter == filter ? QiheColor.brandBlue : QiheColor.muted)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 34)
+                        .background {
+                            if selectedFilter == filter {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(QiheColor.neutral0)
+                                    .shadow(color: QiheColor.shadowNavySoft, radius: 5, x: 0, y: 2)
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
             }
         }
-        .pickerStyle(.segmented)
+        .padding(4)
+        .background(QiheColor.neutral100.opacity(0.72))
+        .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .stroke(QiheColor.glassStroke, lineWidth: 1)
+        )
         .accessibilityLabel("历史筛选")
+    }
+
+    private func historyEmptyState(title: String, detail: String) -> some View {
+        EmptyStateView(title: title, detail: detail)
+            .padding(.horizontal, 16)
+            .background(QiheColor.glassFill)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(QiheColor.glassStroke, lineWidth: 1)
+            )
+            .shadow(color: QiheColor.shadowNavySoft, radius: 10, x: 0, y: 3)
     }
 }
 
@@ -148,82 +202,161 @@ private struct HistoryRecordRow: View {
 
     var body: some View {
         Button(action: action) {
-            PaperCard(padding: 14) {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(alignment: .top, spacing: 10) {
-                        QiheStatusPill(
-                            text: record.type.title,
-                            color: typeColor,
-                            background: typeBackground
-                        )
+            HStack(spacing: 13) {
+                Image(systemName: typeIcon)
+                    .font(.system(size: 19, weight: .medium))
+                    .foregroundStyle(typeColor)
+                    .frame(width: 44, height: 44)
+                    .background(typeBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
 
-                        Spacer(minLength: 8)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(record.title.nilIfBlank ?? "未命名记录")
+                        .font(QiheFont.body(size: 15, weight: .semibold))
+                        .foregroundStyle(QiheColor.ink)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
 
-                        Text(Self.updatedAtFormatter.localizedString(for: record.updatedAt, relativeTo: Date()))
-                            .font(QiheFont.caption(size: 12))
-                            .foregroundStyle(QiheColor.muted)
-                            .lineLimit(1)
-                    }
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(record.title.nilIfBlank ?? "未命名记录")
-                            .font(QiheFont.body(size: 16, weight: .semibold))
-                            .foregroundStyle(QiheColor.ink)
-                            .lineLimit(2)
-
-                        if let subtitle = record.subtitle.nilIfBlank {
-                            Text(subtitle)
-                                .font(QiheFont.body(size: 13))
-                                .foregroundStyle(QiheColor.muted)
-                                .lineLimit(1)
-                        }
-                    }
-
-                    if let preview = record.preview.nilIfBlank {
-                        Text(preview)
-                            .font(QiheFont.body(size: 14))
-                            .foregroundStyle(QiheColor.inkSoft)
-                            .lineLimit(3)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(10)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(QiheColor.paper)
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    }
+                    Text(detailText)
+                        .font(QiheFont.caption(size: 12))
+                        .foregroundStyle(QiheColor.muted)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Spacer(minLength: 6)
+
+                Text(statusText)
+                    .font(QiheFont.caption(size: 12, weight: .semibold))
+                    .foregroundStyle(statusColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    .padding(.horizontal, 9)
+                    .frame(height: 26)
+                    .background(statusBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
+            .padding(14)
+            .background(QiheColor.glassFill)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(QiheColor.glassStroke, lineWidth: 1)
+            )
+            .shadow(color: QiheColor.shadowNavySoft, radius: 8, x: 0, y: 3)
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(record.type.title)，\(record.title.nilIfBlank ?? "未命名记录")")
+        .accessibilityLabel(
+            "\(record.type.title)，\(record.title.nilIfBlank ?? "未命名记录")，\(statusText)"
+        )
+        .accessibilityHint("打开这条历史记录")
+    }
+
+    private var detailText: String {
+        let time = Self.displayTime(for: record.updatedAt)
+        guard let subtitle = record.subtitle.nilIfBlank else {
+            return time
+        }
+        return "\(subtitle) · \(time)"
+    }
+
+    private var statusText: String {
+        switch record.type {
+        case .chat:
+            return "对话"
+        case .generate:
+            return "拟定"
+        case .review:
+            guard let result = record.reviewPayload?.result else {
+                return "审查"
+            }
+            let count = result.displayedRiskCount
+            return count > 0 ? "\(count) 处风险" : "已通过"
+        }
+    }
+
+    private var statusColor: Color {
+        guard record.type == .review else {
+            return QiheColor.brandBlue
+        }
+        guard let result = record.reviewPayload?.result else {
+            return QiheColor.riskOrange
+        }
+        guard result.displayedRiskCount > 0 else {
+            return QiheColor.safeGreen
+        }
+        return result.riskLevel == .high ? QiheColor.riskRed : QiheColor.riskOrange
+    }
+
+    private var statusBackground: Color {
+        guard record.type == .review else {
+            return QiheColor.infoBlueSoft
+        }
+        guard let result = record.reviewPayload?.result else {
+            return QiheColor.riskOrangeSoft
+        }
+        guard result.displayedRiskCount > 0 else {
+            return QiheColor.safeGreenSoft
+        }
+        return result.riskLevel == .high ? QiheColor.riskRedSoft : QiheColor.riskOrangeSoft
     }
 
     private var typeColor: Color {
         switch record.type {
         case .chat:
-            return QiheColor.navy
+            return QiheColor.infoBlue
         case .review:
-            return QiheColor.seal
+            return QiheColor.riskOrange
         case .generate:
-            return QiheColor.pine
+            return QiheColor.safeGreen
         }
     }
 
     private var typeBackground: Color {
         switch record.type {
         case .chat:
-            return QiheColor.navySoft
+            return QiheColor.infoBlueSoft
         case .review:
-            return QiheColor.sealSoft
+            return QiheColor.riskOrangeSoft
         case .generate:
-            return QiheColor.pineSoft
+            return QiheColor.safeGreenSoft
         }
     }
 
-    private static let updatedAtFormatter: RelativeDateTimeFormatter = {
-        let formatter = RelativeDateTimeFormatter()
+    private var typeIcon: String {
+        switch record.type {
+        case .chat:
+            return "bubble.left.and.text.bubble.right"
+        case .review:
+            return "doc.text.magnifyingglass"
+        case .generate:
+            return "doc.text"
+        }
+    }
+
+    private static func displayTime(for date: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) {
+            return "今天 \(clockFormatter.string(from: date))"
+        }
+        if calendar.isDateInYesterday(date) {
+            return "昨天 \(clockFormatter.string(from: date))"
+        }
+        return dateFormatter.string(from: date)
+    }
+
+    private static let clockFormatter: DateFormatter = {
+        let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_Hans_CN")
-        formatter.unitsStyle = .short
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
+
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_Hans_CN")
+        formatter.dateFormat = "M月d日 HH:mm"
         return formatter
     }()
 }

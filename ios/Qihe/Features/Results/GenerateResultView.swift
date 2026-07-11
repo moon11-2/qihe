@@ -12,6 +12,7 @@ struct GenerateResultView: View {
     @EnvironmentObject private var historyStore: HistoryStore
     @EnvironmentObject private var revisionStore: RevisionStore
     let recordId: UUID
+    @State private var currentDraft: String?
     @State private var fieldValues: [String: String] = [:]
     @State private var editedParagraphIds: Set<String> = []
     @State private var scrollToSegmentId: String? = nil
@@ -23,11 +24,11 @@ struct GenerateResultView: View {
 
     var body: some View {
         ZStack {
-            QiheColor.paper.ignoresSafeArea()
+            QiheColor.pageBackgroundGradient.ignoresSafeArea()
 
             if let payload = historyStore.record(id: recordId)?.generatePayload {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 16) {
                         if let errorMessage {
                             ErrorBanner(message: errorMessage, retryTitle: "重试导出") {
                                 Task {
@@ -45,8 +46,11 @@ struct GenerateResultView: View {
                             .foregroundStyle(QiheColor.muted)
                             .frame(maxWidth: .infinity)
                     }
-                    .padding(20)
+                    .padding(.horizontal, 18)
+                    .padding(.top, 16)
+                    .padding(.bottom, 24)
                 }
+                .scrollIndicators(.hidden)
             } else {
                 EmptyStateView(
                     title: "无法读取生成结果",
@@ -83,66 +87,102 @@ struct GenerateResultView: View {
     }
 
     private func contractEditorSheet(_ payload: GenerateHistoryPayload) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 10) {
-                SealMark(size: 32)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(payload.result.displayTitle)
-                        .font(QiheFont.title(size: 16))
-                        .foregroundStyle(QiheColor.ink)
-                    Text(payload.attachment?.filename ?? "契合起草 · 参照《民法典》合同编体例")
-                        .font(QiheFont.caption(size: 11))
-                        .foregroundStyle(QiheColor.muted)
-                }
-                Spacer()
+        VStack(alignment: .leading, spacing: 14) {
+            generateHeader(payload)
+            generateStats(payload.result)
+            contractPaper(payload)
+            placeholderTokenList(payload.result)
+        }
+    }
+
+    private func generateHeader(_ payload: GenerateHistoryPayload) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            QiheLogoMark(size: 30)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(payload.result.displayTitle)
+                    .font(QiheFont.title(size: 18))
+                    .foregroundStyle(QiheColor.ink)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.82)
+
+                Text(payload.attachment?.filename ?? "契合起草 · 参照《民法典》合同编体例")
+                    .font(QiheFont.caption(size: 11))
+                    .foregroundStyle(QiheColor.muted)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
             }
 
-            VStack(spacing: 12) {
+            Spacer(minLength: 8)
+
+            QiheStatusPill(
+                text: "待填写 \(unfilledPlaceholderCount(in: payload.result))",
+                color: unfilledPlaceholderCount(in: payload.result) > 0 ? QiheColor.riskOrange : QiheColor.safeGreen,
+                background: unfilledPlaceholderCount(in: payload.result) > 0 ? QiheColor.riskOrangeSoft : QiheColor.safeGreenSoft
+            )
+        }
+        .padding(14)
+        .background(QiheColor.glassFill)
+        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.card, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: QiheRadius.card, style: .continuous)
+                .stroke(QiheColor.glassStroke, lineWidth: 1)
+        )
+    }
+
+    private func generateStats(_ result: GenerateResult) -> some View {
+        ResultStatStrip(
+            items: [
+                ResultStatItem(label: "待填写", value: "\(unfilledPlaceholderCount(in: result))", color: QiheColor.riskOrange),
+                ResultStatItem(label: "已填写", value: "\(filledPlaceholderCount(in: result))", color: QiheColor.safeGreen),
+                ResultStatItem(label: "已修改", value: "\(editedParagraphIds.count)", color: QiheColor.brandBlue)
+            ]
+        )
+    }
+
+    private func contractPaper(_ payload: GenerateHistoryPayload) -> some View {
+        VStack(alignment: .leading, spacing: 15) {
+            VStack(spacing: 5) {
                 Text(payload.result.displayTitle)
-                    .font(QiheFont.title(size: 19))
+                    .font(QiheFont.title(size: 20))
                     .foregroundStyle(QiheColor.ink)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.82)
                     .frame(maxWidth: .infinity)
 
                 Text("草案 · 契合起草 · 参照《民法典》合同编体例")
-                    .font(QiheFont.caption(size: 10))
+                    .font(QiheFont.caption(size: 10, weight: .medium))
                     .foregroundStyle(QiheColor.muted)
-                    .frame(maxWidth: .infinity)
-
-                GeneratedContractEditorView(
-                    draft: payload.result.draft ?? "",
-                    preParsedSegments: generateSegments(from: payload),
-                    fieldValues: $fieldValues,
-                    editedParagraphIds: $editedParagraphIds,
-                    scrollToSegmentId: $scrollToSegmentId
-                )
-                .frame(minHeight: 200)
-            }
-            .padding(18)
-            .background(QiheColor.card)
-            .clipShape(RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous)
-                    .stroke(QiheColor.lineStrong, lineWidth: 1)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: QiheRadius.xs, style: .continuous)
-                    .stroke(QiheColor.line, lineWidth: 1)
-                    .padding(6)
-            )
-            .overlay(alignment: .bottomTrailing) {
-                Text("待簽\n用印")
-                    .font(QiheFont.title(size: 12))
                     .multilineTextAlignment(.center)
-                    .foregroundStyle(QiheColor.seal.opacity(0.58))
-                    .frame(width: 54, height: 54)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: QiheRadius.md, style: .continuous)
-                            .stroke(QiheColor.seal.opacity(0.48), lineWidth: 2.5)
-                    )
-                    .rotationEffect(.degrees(-7))
-                    .padding(14)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+                    .frame(maxWidth: .infinity)
             }
+
+            GeneratedContractEditorView(
+                draft: payload.result.draft ?? "",
+                preParsedSegments: generateSegments(from: payload),
+                fieldValues: $fieldValues,
+                editedParagraphIds: $editedParagraphIds,
+                scrollToSegmentId: $scrollToSegmentId,
+                onDraftChange: { draft in
+                    currentDraft = draft
+                    didCopy = false
+                }
+            )
+            .frame(minHeight: 260)
         }
+        .padding(.horizontal, 18)
+        .padding(.top, 20)
+        .padding(.bottom, 22)
+        .background(QiheColor.card.opacity(0.98))
+        .clipShape(RoundedRectangle(cornerRadius: QiheRadius.card, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: QiheRadius.card, style: .continuous)
+                .stroke(QiheColor.glassStroke, lineWidth: 1)
+        )
+        .shadow(color: QiheColor.shadowNavySoft, radius: 12, x: 0, y: 4)
     }
 
     /// 生成合同的段落解析：优先后端 blocks，回退前端分段
@@ -157,7 +197,90 @@ struct GenerateResultView: View {
         )
     }
 
+    private func placeholderTokenList(_ result: GenerateResult) -> some View {
+        let names = fieldNames(for: result)
 
+        return Group {
+            if !names.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 8) {
+                        Text("待填写占位符")
+                            .font(QiheFont.title(size: 16))
+                            .foregroundStyle(QiheColor.ink)
+
+                        Spacer(minLength: 8)
+
+                        QiheStatusPill(
+                            text: "\(filledPlaceholderCount(in: result))/\(names.count) 已填",
+                            color: unfilledPlaceholderCount(in: result) > 0 ? QiheColor.riskOrange : QiheColor.safeGreen,
+                            background: unfilledPlaceholderCount(in: result) > 0 ? QiheColor.riskOrangeSoft : QiheColor.safeGreenSoft
+                        )
+                    }
+
+                    VStack(spacing: 0) {
+                        ForEach(names, id: \.self) { name in
+                            placeholderTokenRow(name: name)
+
+                            if name != names.last {
+                                Rectangle()
+                                    .fill(QiheColor.line.opacity(0.85))
+                                    .frame(height: 1)
+                            }
+                        }
+                    }
+                }
+                .padding(14)
+                .background(QiheColor.glassFill)
+                .clipShape(RoundedRectangle(cornerRadius: QiheRadius.card, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: QiheRadius.card, style: .continuous)
+                        .stroke(QiheColor.glassStroke, lineWidth: 1)
+                )
+                .shadow(color: QiheColor.shadowNavySoft, radius: 8, x: 0, y: 2)
+            }
+        }
+    }
+
+    private func placeholderTokenRow(name: String) -> some View {
+        let value = fieldValues[name]?.nilIfBlank
+        let isFilled = value != nil
+
+        return HStack(spacing: 10) {
+            Circle()
+                .fill(isFilled ? QiheColor.safeGreen : QiheColor.riskOrange)
+                .frame(width: 8, height: 8)
+
+            Text(name)
+                .font(QiheFont.body(size: 14, weight: .semibold))
+                .foregroundStyle(QiheColor.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+
+            Spacer(minLength: 8)
+
+            Text(value ?? "未填写")
+                .font(QiheFont.caption(size: 12, weight: .semibold))
+                .foregroundStyle(isFilled ? QiheColor.safeGreen : QiheColor.riskOrange)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+
+            Image(systemName: isFilled ? "checkmark" : "square.and.pencil")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(isFilled ? QiheColor.safeGreen : QiheColor.riskOrange)
+                .frame(width: 24, height: 24)
+                .background(isFilled ? QiheColor.safeGreenSoft : QiheColor.riskOrangeSoft)
+                .clipShape(RoundedRectangle(cornerRadius: QiheRadius.badge, style: .continuous))
+        }
+        .padding(.vertical, 9)
+    }
+
+    private func filledPlaceholderCount(in result: GenerateResult) -> Int {
+        fieldNames(for: result).filter { fieldValues[$0]?.nilIfBlank != nil }.count
+    }
+
+    private func unfilledPlaceholderCount(in result: GenerateResult) -> Int {
+        fieldNames(for: result).filter { fieldValues[$0]?.nilIfBlank == nil }.count
+    }
 
     private func checklist(_ result: GenerateResult) -> some View {
         PaperCard(padding: 14) {
@@ -190,12 +313,16 @@ struct GenerateResultView: View {
     }
 
     private func actions(_ payload: GenerateHistoryPayload) -> some View {
-        HStack(spacing: 10) {
+        let columns = [
+            GridItem(.adaptive(minimum: 136), spacing: 10)
+        ]
+
+        return LazyVGrid(columns: columns, spacing: 10) {
             QiheSecondaryButton(
                 title: didCopy ? "已复制" : "复制全文",
                 systemImage: didCopy ? "checkmark" : "doc.on.doc"
             ) {
-                copyDraft(renderedDraft(payload.result))
+                copyDraft(activeDraft(for: payload.result))
                 didCopy = true
             }
 
@@ -217,7 +344,12 @@ struct GenerateResultView: View {
                 guard requireSignIn() else {
                     return
                 }
-                appState.path.append(.generate(prefill: renderedDraft(payload.result)))
+                appState.path.append(
+                    .generate(
+                        prefill: activeDraft(for: payload.result),
+                        sourceChatRecordId: payload.sourceChatRecordId
+                    )
+                )
             }
         }
         .confirmationDialog("定位到未填项", isPresented: $showLocateDialog, titleVisibility: .visible) {
@@ -273,27 +405,15 @@ struct GenerateResultView: View {
         return names
     }
 
-    private func renderedDraft(_ result: GenerateResult) -> String {
-        // 任务三：优先后端 blocks 构建 draft
-        if result.hasBackendBlocks {
-            return renderedDraftFromBlocks(result)
+    private func activeDraft(for result: GenerateResult) -> String {
+        if let currentDraft {
+            return currentDraft
         }
 
-        var draft = result.draft ?? ""
-        for field in fieldNames(for: result) {
-            guard let value = fieldValues[field]?.nilIfBlank else {
-                continue
-            }
-            let tokens = [
-                "【待补充：\(field)】",
-                "【待补充:\(field)】",
-                "[\(field)]"
-            ]
-            for token in tokens {
-                draft = draft.replacingOccurrences(of: token, with: value)
-            }
+        if result.hasBackendBlocks {
+            return result.blocks?.map(\.text).joined(separator: "\n\n") ?? result.draft ?? ""
         }
-        return draft
+        return result.draft ?? ""
     }
 
     private func placeholders(in draft: String) -> [String] {
@@ -339,12 +459,8 @@ struct GenerateResultView: View {
 
         do {
             var result = payload.result
-            // 任务三：导出时使用修改后的 blocks 文本构建 draft
-            if payload.result.hasBackendBlocks {
-                result.draft = renderedDraftFromBlocks(payload.result)
-            } else {
-                result.draft = renderedDraft(payload.result)
-            }
+            result.draft = activeDraft(for: payload.result)
+            result.blocks = nil
             let url = try await appState.apiClient.exportGenerateWord(
                 title: result.displayTitle,
                 payload: result
@@ -353,35 +469,6 @@ struct GenerateResultView: View {
         } catch {
             errorMessage = error.qiheDisplayMessage
         }
-    }
-
-    /// 从后端 blocks 构建导出的 draft 文本（任务三）
-    private func renderedDraftFromBlocks(_ result: GenerateResult) -> String {
-        guard let blocks = result.blocks else {
-            return result.draft ?? ""
-        }
-        // 拼接所有 block 文本，并替换占位符的值
-        var fullText = blocks.map { block in
-            if block.kind == .placeholder, let name = block.placeholderName,
-               let filledValue = fieldValues[name]?.nilIfBlank {
-                return filledValue
-            }
-            return block.text
-        }.joined(separator: "\n\n")
-
-        // 兜底：对拼接文本也做一次占位符替换
-        for (name, value) in fieldValues {
-            guard let cleaned = value.nilIfBlank else { continue }
-            let tokens = [
-                "【待补充：\(name)】",
-                "【待补充:\(name)】",
-                "[\(name)]"
-            ]
-            for token in tokens {
-                fullText = fullText.replacingOccurrences(of: token, with: cleaned)
-            }
-        }
-        return fullText
     }
 
     @MainActor

@@ -4,7 +4,9 @@ struct GenerateInputView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var authStore: AuthStore
     @EnvironmentObject private var historyStore: HistoryStore
+    private let sourceChatRecordId: UUID?
     @State private var text: String
+    @State private var didHydrateSourceContext = false
     @State private var isSupplementExpanded = false
     @State private var contractType = ""
     @State private var myIdentity = ""
@@ -18,7 +20,8 @@ struct GenerateInputView: View {
     @State private var errorMessage: String?
     @State private var lastImportedURL: URL?
 
-    init(prefill: String?) {
+    init(prefill: String?, sourceChatRecordId: UUID? = nil) {
+        self.sourceChatRecordId = sourceChatRecordId
         _text = State(initialValue: prefill ?? "")
     }
 
@@ -91,6 +94,9 @@ struct GenerateInputView: View {
         }
         .navigationTitle("合同生成")
         .qiheInlineNavigationTitle()
+        .onAppear {
+            hydrateSourceContextIfNeeded()
+        }
         .toolbar {
             ToolbarItem(placement: .qiheTopTrailing) {
                 Button {
@@ -222,7 +228,54 @@ struct GenerateInputView: View {
     }
 
     private var hasInput: Bool {
-        !text.trimmedForInput.isEmpty || attachment != nil || hasSupplementRequirements
+        !generationRequestText.isEmpty || attachment != nil || hasSupplementRequirements
+    }
+
+    private var sourceChatPayload: ChatHistoryPayload? {
+        guard let sourceChatRecordId,
+              let record = historyStore.record(id: sourceChatRecordId),
+              record.type == .chat else {
+            return nil
+        }
+        return record.chatPayload
+    }
+
+    private var sourceUserRequirements: [String] {
+        guard let messages = sourceChatPayload?.messages else {
+            return []
+        }
+
+        var requirements: [String] = []
+        var seen = Set<String>()
+        for message in messages where message.role == .user {
+            let content = message.content.trimmedForInput
+            let normalized = Self.normalizedRequirement(content)
+            guard Self.isValidGenerationRequirement(content),
+                  seen.insert(normalized).inserted else {
+                continue
+            }
+            requirements.append(content)
+        }
+        return requirements
+    }
+
+    private var generationRequestParts: [String] {
+        var parts: [String] = []
+        var seen = Set<String>()
+        for candidate in sourceUserRequirements + [text] {
+            let content = candidate.trimmedForInput
+            let normalized = Self.normalizedRequirement(content)
+            guard Self.isValidGenerationRequirement(content),
+                  seen.insert(normalized).inserted else {
+                continue
+            }
+            parts.append(content)
+        }
+        return parts
+    }
+
+    private var generationRequestText: String {
+        generationRequestParts.joined(separator: "\n\n")
     }
 
     private var hasSupplementRequirements: Bool {
@@ -306,7 +359,7 @@ struct GenerateInputView: View {
         QiheKeyboard.dismiss()
 
         let runID = UUID()
-        let requestText = text
+        let requestText = generationRequestText
         let requestAttachment = attachment
         let metadata = requestMetadata
 
@@ -353,9 +406,44 @@ struct GenerateInputView: View {
             guard !Task.isCancelled, activeGenerateRunID == runID else { return }
 
             // 导航到进度页
-            appState.path.append(.progress(jobId: jobId, mode: .generate))
+            appState.path.append(
+                .progress(
+                    jobId: jobId,
+                    mode: .generate,
+                    requestText: requestText,
+                    attachment: requestAttachment,
+                    sourceChatRecordId: sourceChatRecordId
+                )
+            )
         } catch {
             guard !isCancellation(error), activeGenerateRunID == runID else { return }
+
+            if let apiError = error as? APIClientError,
+               apiError.permitsSynchronousContractFallback {
+                guard !Task.isCancelled, activeGenerateRunID == runID else { return }
+
+                do {
+                    let result = try await appState.apiClient.runGenerate(
+                        text: requestText,
+                        file: requestAttachment,
+                        metadata: metadata
+                    )
+                    guard !Task.isCancelled, activeGenerateRunID == runID else { return }
+
+                    let recordId = historyStore.saveGenerate(
+                        requestText: requestText,
+                        attachment: requestAttachment,
+                        result: result,
+                        sourceChatRecordId: sourceChatRecordId
+                    )
+                    appState.path.append(.generateResult(recordId: recordId))
+                } catch {
+                    guard !isCancellation(error), activeGenerateRunID == runID else { return }
+                    errorMessage = error.qiheDisplayMessage
+                }
+                return
+            }
+
             errorMessage = error.qiheDisplayMessage
         }
     }
@@ -390,6 +478,191 @@ struct GenerateInputView: View {
             startGenerate()
         }
     }
+
+    @MainActor
+    private func hydrateSourceContextIfNeeded() {
+        guard !didHydrateSourceContext else {
+            return
+        }
+        didHydrateSourceContext = true
+
+        guard sourceChatPayload != nil else {
+            return
+        }
+
+        let prefill = text.trimmedForInput
+        guard !prefill.isEmpty else {
+            return
+        }
+
+        let duplicatesSourceRequirement = sourceUserRequirements.contains {
+            Self.normalizedRequirement($0) == Self.normalizedRequirement(prefill)
+        }
+        if !Self.isValidGenerationRequirement(prefill) || duplicatesSourceRequirement {
+            text = ""
+        }
+    }
+
+    private static func isValidGenerationRequirement(_ value: String) -> Bool {
+        let normalized = normalizedRequirement(value)
+        guard !normalized.isEmpty else {
+            return false
+        }
+        return !isPureConversationOnly(normalized)
+    }
+
+    private static func normalizedRequirement(_ value: String) -> String {
+        let separators = CharacterSet.whitespacesAndNewlines
+            .union(.punctuationCharacters)
+            .union(.symbols)
+        return value
+            .lowercased()
+            .components(separatedBy: separators)
+            .joined()
+    }
+
+    private static func isPureConversationOnly(_ normalized: String) -> Bool {
+        if pureWorkflowActions.contains(normalized)
+            || pureAcknowledgements.contains(normalized)
+            || pureSmallTalk.contains(normalized) {
+            return true
+        }
+
+        var candidate = normalized
+        var didStripWrapper = true
+        while didStripWrapper, !candidate.isEmpty {
+            didStripWrapper = false
+
+            if let prefix = conversationalPrefixes.first(where: {
+                candidate.count > $0.count && candidate.hasPrefix($0)
+            }) {
+                candidate.removeFirst(prefix.count)
+                didStripWrapper = true
+            }
+
+            if let suffix = conversationalSuffixes.first(where: {
+                candidate.count > $0.count && candidate.hasSuffix($0)
+            }) {
+                candidate.removeLast(suffix.count)
+                didStripWrapper = true
+            }
+        }
+
+        return pureWorkflowActions.contains(candidate)
+            || pureAcknowledgements.contains(candidate)
+            || pureSmallTalk.contains(candidate)
+    }
+
+    private static let pureWorkflowActions: Set<String> = [
+        "生成",
+        "生成合同",
+        "生成一个合同",
+        "合同生成",
+        "开始",
+        "开始生成",
+        "开始生成合同",
+        "立即生成合同",
+        "继续生成",
+        "确认生成",
+        "下一步",
+        "去生成",
+        "进入生成",
+        "进入合同生成",
+        "进入合同生成页",
+        "去生成合同",
+        "拟定合同",
+        "拟一份合同",
+        "拟个合同",
+        "进入合同拟定",
+        "起草合同",
+        "起草一份合同",
+        "生成一份合同",
+        "合同审查",
+        "审查合同",
+        "进入审查",
+        "进入合同审查"
+    ]
+
+    private static let pureAcknowledgements: Set<String> = [
+        "好",
+        "好的",
+        "可以",
+        "行",
+        "明白",
+        "明白了",
+        "收到",
+        "谢谢",
+        "好的谢谢",
+        "好嘞",
+        "没问题",
+        "继续",
+        "确认",
+        "是的"
+    ]
+
+    private static let pureSmallTalk: Set<String> = [
+        "嗯",
+        "嗯嗯",
+        "请问",
+        "你好",
+        "您好",
+        "早上好",
+        "下午好",
+        "晚上好",
+        "嗨",
+        "哈喽",
+        "hello",
+        "hi",
+        "在吗",
+        "在不在",
+        "有人吗"
+    ]
+
+    private static let conversationalPrefixes = [
+        "hello",
+        "麻烦你",
+        "请帮我",
+        "我想要",
+        "我需要",
+        "哈喽",
+        "你好",
+        "您好",
+        "在吗",
+        "麻烦",
+        "帮我",
+        "给我",
+        "我想",
+        "我要",
+        "请你",
+        "好的",
+        "可以",
+        "那么",
+        "谢谢",
+        "请",
+        "hi",
+        "好",
+        "行",
+        "嗨",
+        "那"
+    ]
+
+    private static let conversationalSuffixes = [
+        "一下吧",
+        "谢谢你",
+        "可以吗",
+        "好吗",
+        "行吗",
+        "一下",
+        "谢谢",
+        "吧",
+        "呀",
+        "啦",
+        "哈",
+        "呢",
+        "哦",
+        "噢",
+        "亲"
+    ]
 
     @MainActor
     private func requireSignIn() -> Bool {

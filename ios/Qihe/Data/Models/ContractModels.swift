@@ -201,7 +201,17 @@ struct GenerateJobRequest: Codable, Hashable {
 /// 提交 job 后的初始响应（只包含 job_id）
 struct JobCreatedResponse: Decodable {
     let jobId: String
-    enum CodingKeys: String, CodingKey { case jobId = "job_id" }
+
+    enum CodingKeys: String, CodingKey {
+        case jobId
+        case jobIdSnake = "job_id"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        jobId = try container.decodeIfPresent(String.self, forKey: .jobId)
+            ?? container.decode(String.self, forKey: .jobIdSnake)
+    }
 }
 
 // MARK: - 积分权益 DTO（任务六）
@@ -1336,6 +1346,19 @@ struct GenerateHistoryPayload: Codable, Hashable {
     var requestText: String
     var attachment: UploadedFile?
     var result: GenerateResult
+    var sourceChatRecordId: UUID?
+
+    init(
+        requestText: String,
+        attachment: UploadedFile?,
+        result: GenerateResult,
+        sourceChatRecordId: UUID? = nil
+    ) {
+        self.requestText = requestText
+        self.attachment = attachment
+        self.result = result
+        self.sourceChatRecordId = sourceChatRecordId
+    }
 }
 
 struct HistoryRecord: Identifiable, Codable, Hashable {
