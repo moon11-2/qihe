@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sqlite3
+
 from app.services.db import connect
 
 
@@ -17,27 +19,8 @@ def ensure_user_credits(user_id: int) -> int:
     """
     now = _now_iso()
     with connect() as conn:
-        row = conn.execute(
-            "SELECT balance FROM user_credits WHERE user_id = ?", (user_id,)
-        ).fetchone()
-        if row:
-            return int(row["balance"])
-
-        cursor = conn.execute(
-            "INSERT OR IGNORE INTO user_credits (user_id, balance, created_at, updated_at) VALUES (?, ?, ?, ?)",
-            (user_id, CREDIT_NEW_USER_BONUS, now, now),
-        )
-        if cursor.rowcount == 1:
-            conn.execute(
-                "INSERT INTO credit_transactions (user_id, amount, reason, created_at) VALUES (?, ?, ?, ?)",
-                (user_id, CREDIT_NEW_USER_BONUS, "new_user_bonus", now),
-            )
-        conn.commit()
-
-        row = conn.execute(
-            "SELECT balance FROM user_credits WHERE user_id = ?", (user_id,)
-        ).fetchone()
-        return int(row["balance"]) if row else 0
+        conn.execute("BEGIN IMMEDIATE")
+        return _ensure_user_credits(conn, user_id, now)
 
 
 def get_balance(user_id: int) -> int:
@@ -63,9 +46,32 @@ def deduct_credits(
     if amount <= 0:
         raise ValueError("invalid_credit_amount")
 
-    ensure_user_credits(user_id)
     now = _now_iso()
     with connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        _ensure_user_credits(conn, user_id, now)
+
+        if job_id:
+            existing = conn.execute(
+                """
+                SELECT user_id, amount, reason
+                FROM credit_transactions
+                WHERE job_id = ? AND amount < 0
+                """,
+                (job_id,),
+            ).fetchone()
+            if existing:
+                if (
+                    int(existing["user_id"]) != user_id
+                    or int(existing["amount"]) != -amount
+                    or str(existing["reason"]) != reason
+                ):
+                    raise ValueError("job_credit_mismatch")
+                row = conn.execute(
+                    "SELECT balance FROM user_credits WHERE user_id = ?", (user_id,)
+                ).fetchone()
+                return int(row["balance"]) if row else 0
+
         cursor = conn.execute(
             """
             UPDATE user_credits
@@ -77,12 +83,16 @@ def deduct_credits(
         if cursor.rowcount != 1:
             raise ValueError("insufficient_credits")
 
-        conn.execute(
-            "INSERT INTO credit_transactions (user_id, amount, reason, reference_id, job_id, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (user_id, -amount, reason, reference_id, job_id, now),
-        )
-        conn.commit()
+        try:
+            conn.execute(
+                "INSERT INTO credit_transactions (user_id, amount, reason, reference_id, job_id, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (user_id, -amount, reason, reference_id, job_id, now),
+            )
+        except sqlite3.IntegrityError as exc:
+            if job_id:
+                raise ValueError("job_credit_mismatch") from exc
+            raise
         row = conn.execute(
             "SELECT balance FROM user_credits WHERE user_id = ?", (user_id,)
         ).fetchone()
@@ -96,9 +106,10 @@ def add_credits(
     reference_id: str | None = None,
 ) -> int:
     """Add credits atomically. Returns new balance."""
-    ensure_user_credits(user_id)
     now = _now_iso()
     with connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        _ensure_user_credits(conn, user_id, now)
         conn.execute(
             "UPDATE user_credits SET balance = balance + ?, updated_at = ? WHERE user_id = ?",
             (amount, now, user_id),
@@ -108,11 +119,28 @@ def add_credits(
             "VALUES (?, ?, ?, ?, ?)",
             (user_id, amount, reason, reference_id, now),
         )
-        conn.commit()
         row = conn.execute(
             "SELECT balance FROM user_credits WHERE user_id = ?", (user_id,)
         ).fetchone()
         return int(row["balance"])
+
+
+def _ensure_user_credits(conn: sqlite3.Connection, user_id: int, now: str) -> int:
+    row = conn.execute(
+        "SELECT balance FROM user_credits WHERE user_id = ?", (user_id,)
+    ).fetchone()
+    if row:
+        return int(row["balance"])
+
+    conn.execute(
+        "INSERT INTO user_credits (user_id, balance, created_at, updated_at) VALUES (?, ?, ?, ?)",
+        (user_id, CREDIT_NEW_USER_BONUS, now, now),
+    )
+    conn.execute(
+        "INSERT INTO credit_transactions (user_id, amount, reason, created_at) VALUES (?, ?, ?, ?)",
+        (user_id, CREDIT_NEW_USER_BONUS, "new_user_bonus", now),
+    )
+    return CREDIT_NEW_USER_BONUS
 
 
 def _now_iso() -> str:

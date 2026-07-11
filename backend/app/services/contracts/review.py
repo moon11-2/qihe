@@ -30,6 +30,21 @@ REVIEW_METADATA_LABELS = {
 }
 REVIEW_METADATA_KEYS = ("contract_type", "user_role", "my_position", "focus_areas")
 FALLBACK_REVIEW_MESSAGE = "AI 输出暂时未能稳定解析，已根据合同文本提取重点核对项。"
+NO_OBVIOUS_RISK_SUMMARY = "未发现明显风险。"
+INVALID_REVIEW_OUTPUT_MESSAGE = "AI 输出暂时未能稳定解析，已返回待确认的结构化审查结果。"
+ABSOLUTE_SAFETY_CLAIMS = ("合同绝对安全", "百分之百安全", "完全安全", "绝对安全", "保证安全", "零风险")
+RISK_ARRAY_KEYS = ("clause_reviews", "risk_items")
+NO_RISK_NEGATION_PATTERNS = (
+    r"(?:并非|不是|不代表|不能说|不能确认|无法认定|不可认定|不应认为|不能认为|尚不能认为|并不意味着).{0,8}未发现明显风险",
+    r"未发现明显风险(?:的|这一)?(?:结论|说法|判断)?(?:并)?(?:不成立|不准确|错误|有误)",
+    r"未发现明显风险.{0,8}(?:不等于|不代表|并不表示|并不是).{0,8}(?:没有|不存在)?风险?",
+)
+NO_RISK_CONTRADICTION_PATTERNS = (
+    r"(?<!不)(?<!未)(?:存在|发现|识别出|检出|确认有|仍有|还有)[^，。；;]{0,24}风险",
+    r"(?:但|但是|不过|然而|却|实际(?:上)?|同时)[^，。；;]{0,24}(?<!不)(?:有|存在)[^，。；;]{0,16}风险",
+    r"(?:不能|无法|尚不能|未能|不)(?:完全)?排除[^，。；;]{0,16}风险",
+    r"风险(?:等级|程度)?(?:为|是)?(?:高|中)(?:风险)?",
+)
 
 FALLBACK_RULES = [
     {
@@ -117,16 +132,23 @@ async def run_review(
     ]
     try:
         data = await llm.chat_json(messages, schema_name="contract_review")
+        if not isinstance(data, dict):
+            raise ValueError("contract review output is not an object")
+        return normalize_review_result(data, source, text)
     except Exception:
-        return build_review_fallback(source, "AI 输出暂时未能稳定解析，已返回待确认的结构化审查结果。", text)
-
-    return normalize_review_result(data, source, text)
+        return build_review_fallback(source, INVALID_REVIEW_OUTPUT_MESSAGE, text)
 
 
 def normalize_review_result(data: dict[str, Any], source: ContractSource, source_text: str = "") -> ReviewResult:
+    validated_payload = _validated_review_payload(data)
+    if validated_payload is None:
+        return build_review_fallback(source, INVALID_REVIEW_OUTPUT_MESSAGE, source_text)
+
     parties_data = data.get("parties") if isinstance(data.get("parties"), dict) else {}
-    clause_reviews = _normalize_clause_reviews(data.get("clause_reviews") or data.get("risk_items"), source_text)
-    overall_level = risk_level(data.get("risk_level"), _derive_overall_level(clause_reviews))
+    review_items, explicit_no_risk = validated_payload
+    clause_reviews = [] if explicit_no_risk else _normalize_clause_reviews(review_items, source_text)
+    default_level = "低风险" if explicit_no_risk else _derive_overall_level(clause_reviews)
+    overall_level = risk_level(data.get("risk_level"), default_level)
     parties = _normalize_parties(parties_data, source_text)
 
     # Segment source text into blocks
@@ -136,25 +158,94 @@ def normalize_review_result(data: dict[str, Any], source: ContractSource, source
     _bind_risks_to_blocks(clause_reviews, blocks)
 
     return ReviewResult(
-        title=safe_output_text(text_or_default(data.get("title"), "合同审查报告")),
+        title=_safe_review_text(text_or_default(data.get("title"), "合同审查报告")),
         summary=append_once(
-            safe_output_text(text_or_default(data.get("summary"), "已完成结构化合同审查。")),
+            NO_OBVIOUS_RISK_SUMMARY
+            if explicit_no_risk
+            else _safe_review_text(text_or_default(data.get("summary"), "已完成结构化合同审查。")),
             REVIEW_DISCLAIMER,
         ),
         review_basis=append_once(
-            safe_output_text(
+            _safe_review_text(
                 text_or_default(data.get("review_basis"), "基于用户提供的合同文本及一般合同审查关注点进行 AI 辅助审查。")
             ),
             REVIEW_DISCLAIMER,
         ),
         risk_level=overall_level,
-        score=bounded_score(data.get("score")),
+        score=_normalized_no_risk_score(data.get("score")) if explicit_no_risk else bounded_score(data.get("score")),
         risk_items=clause_reviews,
         clause_reviews=clause_reviews,
         parties=parties,
         source=source,
         blocks=blocks,
     )
+
+
+def _validated_review_payload(data: dict[str, Any]) -> tuple[list[dict[str, Any]], bool] | None:
+    """Return fully validated risk items and whether this is a strict no-risk result."""
+    provided_fields = [(key, data[key]) for key in RISK_ARRAY_KEYS if key in data]
+    if not provided_fields or any(not isinstance(value, list) for _, value in provided_fields):
+        return None
+
+    risk_arrays = [value for _, value in provided_fields]
+    if all(len(risk_array) == 0 for risk_array in risk_arrays):
+        return ([], True) if _is_explicit_no_risk_result(data) else None
+
+    # Multiple aliases must describe the same complete payload. An empty alias,
+    # a mismatched alias, or one malformed element makes the entire output unsafe.
+    first_array = risk_arrays[0]
+    if any(not risk_array or risk_array != first_array for risk_array in risk_arrays[1:]):
+        return None
+    if not first_array or any(not _is_normalizable_review_item(item) for item in first_array):
+        return None
+    return list(first_array), False
+
+
+def _is_normalizable_review_item(item: Any) -> bool:
+    if not isinstance(item, dict):
+        return False
+    has_title = any(
+        text_or_none(safe_output_text(item.get(field)))
+        for field in ("risk_title", "title", "clause_title")
+    )
+    has_analysis = any(
+        text_or_none(safe_output_text(item.get(field)))
+        for field in ("risk_analysis", "description", "risk", "issue")
+    )
+    return has_title and has_analysis
+
+
+def _is_explicit_no_risk_result(data: dict[str, Any]) -> bool:
+    if risk_level(data.get("risk_level")) != "低风险":
+        return False
+    summary = safe_output_text(data.get("summary"))
+    compact_summary = re.sub(r"\s+", "", summary)
+    if NO_OBVIOUS_RISK_SUMMARY.rstrip("。") not in compact_summary:
+        return False
+    if _contains_absolute_safety_claim(compact_summary):
+        return False
+    if any(re.search(pattern, compact_summary) for pattern in NO_RISK_NEGATION_PATTERNS):
+        return False
+
+    summary_without_signal = compact_summary.replace(NO_OBVIOUS_RISK_SUMMARY.rstrip("。"), "", 1)
+    return not any(re.search(pattern, summary_without_signal) for pattern in NO_RISK_CONTRADICTION_PATTERNS)
+
+
+def _normalized_no_risk_score(value: Any) -> int:
+    score = bounded_score(value)
+    return score if score is not None and score >= 90 else 90
+
+
+def _contains_absolute_safety_claim(value: Any) -> bool:
+    text = str(value or "")
+    return any(claim in text for claim in ABSOLUTE_SAFETY_CLAIMS)
+
+
+def _safe_review_text(value: Any) -> str:
+    text = safe_output_text(value)
+    for claim in ABSOLUTE_SAFETY_CLAIMS:
+        text = text.replace(claim, "仍需结合实际情况复核")
+    return text
 
 
 def build_review_fallback(source: ContractSource, message: str, source_text: str = "") -> ReviewResult:
@@ -307,7 +398,7 @@ def _normalize_clause_reviews(value: Any, source_text: str = "") -> list[ClauseR
                 clause_title=text_or_none(item.get("clause_title") or item.get("title_name") or item.get("clause_name"))
                 or _derive_clause_title(clause or original_excerpt),
                 risk_title=text_or_default(
-                    safe_output_text(item.get("risk_title") or item.get("title") or item.get("clause_title")),
+                    _safe_review_text(item.get("risk_title") or item.get("title") or item.get("clause_title")),
                     f"风险事项 {index}",
                 ),
                 risk_level=risk_level(item.get("risk_level") or item.get("level") or item.get("severity")),
@@ -316,17 +407,18 @@ def _normalize_clause_reviews(value: Any, source_text: str = "") -> list[ClauseR
                 start_offset=start_offset,
                 end_offset=end_offset,
                 risk_analysis=text_or_default(
-                    safe_output_text(item.get("risk_analysis") or item.get("description") or item.get("risk") or item.get("issue")),
+                    _safe_review_text(item.get("risk_analysis") or item.get("description") or item.get("risk") or item.get("issue")),
                     "该事项需要结合完整合同文本进一步确认。",
                 ),
                 revision_suggestion=text_or_default(
-                    safe_output_text(item.get("revision_suggestion") or item.get("suggestion")),
+                    _safe_review_text(item.get("revision_suggestion") or item.get("suggestion")),
                     "建议补充明确约定，并在签署前由相关负责人复核。",
                 ),
                 suggested_replacement=text_or_none(
-                    safe_output_text(item.get("suggested_replacement") or item.get("replacement") or item.get("replacement_text"))
+                    _safe_review_text(item.get("suggested_replacement") or item.get("replacement") or item.get("replacement_text"))
                 ),
-                legal_basis=safe_string_list(item.get("legal_basis") or item.get("basis")) or DEFAULT_LEGAL_BASIS,
+                legal_basis=[_safe_review_text(value) for value in safe_string_list(item.get("legal_basis") or item.get("basis"))]
+                or DEFAULT_LEGAL_BASIS,
             )
         )
 

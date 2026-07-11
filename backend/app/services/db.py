@@ -11,10 +11,11 @@ from app.core.config import DEFAULT_QIHE_DB_PATH, settings
 def connect() -> sqlite3.Connection:
     db_path = _resolve_db_path()
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA busy_timeout=10000")
     return conn
 
 
@@ -22,6 +23,8 @@ def init_schema() -> None:
     with connect() as conn:
         conn.executescript(_SCHEMA_SQL)
         _ensure_jobs_columns(conn)
+        _ensure_job_constraints(conn)
+        _ensure_credit_transaction_constraints(conn)
 
 
 def _resolve_db_path() -> Path:
@@ -133,3 +136,79 @@ def _ensure_jobs_columns(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE jobs ADD COLUMN file_id TEXT")
     if "review_perspective" not in columns:
         conn.execute("ALTER TABLE jobs ADD COLUMN review_perspective TEXT")
+
+
+def _ensure_job_constraints(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        UPDATE jobs
+        SET error_message = CASE error_code
+            WHEN 'insufficient_credits' THEN '积分不足，任务无法完成'
+            WHEN 'credit_deduction_failed' THEN '积分扣除失败，请稍后重试'
+            WHEN 'job_state_conflict' THEN '任务状态冲突，请重新提交'
+            ELSE '任务处理失败，请稍后重试'
+        END
+        WHERE error_code IS NOT NULL
+        """
+    )
+    duplicate_owners = conn.execute(
+        """
+        SELECT owner_user_id
+        FROM jobs
+        WHERE status IN ('queued', 'running')
+        GROUP BY owner_user_id
+        HAVING COUNT(*) > 1
+        """
+    ).fetchall()
+    for owner in duplicate_owners:
+        jobs = conn.execute(
+            """
+            SELECT job_id
+            FROM jobs
+            WHERE owner_user_id = ? AND status IN ('queued', 'running')
+            ORDER BY CASE status WHEN 'running' THEN 0 ELSE 1 END, created_at, job_id
+            """,
+            (owner["owner_user_id"],),
+        ).fetchall()
+        for duplicate in jobs[1:]:
+            conn.execute(
+                """
+                UPDATE jobs
+                SET status = 'failed', error_code = 'job_state_conflict',
+                    error_message = '任务状态冲突，请重新提交'
+                WHERE job_id = ?
+                """,
+                (duplicate["job_id"],),
+            )
+
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_jobs_owner_active
+        ON jobs(owner_user_id)
+        WHERE status IN ('queued', 'running')
+        """
+    )
+
+
+def _ensure_credit_transaction_constraints(conn: sqlite3.Connection) -> None:
+    # Preserve legacy ledger amounts while retaining only one job association.
+    conn.execute(
+        """
+        UPDATE credit_transactions
+        SET job_id = NULL
+        WHERE job_id IS NOT NULL AND amount < 0
+          AND id NOT IN (
+              SELECT MIN(id)
+              FROM credit_transactions
+              WHERE job_id IS NOT NULL AND amount < 0
+              GROUP BY job_id
+          )
+        """
+    )
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_credit_transactions_deduction_job
+        ON credit_transactions(job_id)
+        WHERE job_id IS NOT NULL AND amount < 0
+        """
+    )

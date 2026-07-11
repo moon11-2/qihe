@@ -136,6 +136,103 @@ def test_review_fallback_still_returns_text_based_risk_items(tmp_path: Path, mon
     assert result["summary"].startswith("AI 输出暂时未能稳定解析，已根据合同文本提取重点核对项。")
 
 
+def test_review_explicit_no_obvious_risk_keeps_risk_arrays_empty(tmp_path: Path, monkeypatch) -> None:
+    expected = {
+        "title": "合同审查报告",
+        "summary": "已完成审查，未发现明显风险。",
+        "review_basis": "基于用户提供的合同文本及一般合同审查关注点。",
+        "risk_level": "低风险",
+        "score": 96,
+        "parties": {
+            "party_a": "甲公司",
+            "party_b": "乙公司",
+            "amount": None,
+            "term": None,
+            "contract_type": "服务合同",
+            "jurisdiction": None,
+        },
+        "clause_reviews": [],
+    }
+    monkeypatch.setattr(
+        "app.services.contracts.review.create_qwen_provider",
+        lambda: FakeProvider(expected),
+    )
+
+    client = _client(tmp_path, monkeypatch)
+    response = client.post(
+        "/api/contracts/run",
+        json={"mode": "review", "text": "甲方：甲公司\n乙方：乙公司\n双方按约提供服务。"},
+    )
+
+    assert response.status_code == 200
+    result = response.json()["review_result"]
+    assert result["risk_level"] == "低风险"
+    assert result["risk_items"] == []
+    assert result["clause_reviews"] == []
+    assert result["summary"].startswith("未发现明显风险。")
+    assert "合同绝对安全" not in result["summary"]
+    assert result["parties"]["party_a"] == "甲公司"
+    assert result["parties"]["party_b"] == "乙公司"
+    assert result["review_basis"].startswith("基于用户提供的合同文本")
+    assert result["review_basis"].endswith("AI 辅助审查，不构成法律意见。")
+
+
+def test_review_no_obvious_risk_still_returns_source_and_blocks(tmp_path: Path, monkeypatch) -> None:
+    expected = {
+        "title": "合同审查报告",
+        "summary": "未发现明显风险。",
+        "review_basis": "基于用户提供的合同文本及一般合同审查关注点。",
+        "risk_level": "低风险",
+        "score": 98,
+        "parties": {},
+        "clause_reviews": [],
+    }
+    monkeypatch.setattr(
+        "app.services.contracts.review.create_qwen_provider",
+        lambda: FakeProvider(expected),
+    )
+    source_text = "第一条 服务内容\n乙方按约提供服务。\n第二条 履行期限\n双方按约履行。"
+
+    client = _client(tmp_path, monkeypatch)
+    response = client.post(
+        "/api/contracts/run",
+        json={"mode": "review", "text": source_text},
+    )
+
+    assert response.status_code == 200
+    result = response.json()["review_result"]
+    assert result["risk_items"] == []
+    assert result["clause_reviews"] == []
+    assert result["source"]["text_preview"] == source_text
+    assert result["source"]["char_count"] == len(source_text)
+    assert result["blocks"]
+    assert all(block["text"] for block in result["blocks"])
+
+
+def test_review_malformed_output_does_not_report_no_obvious_risk(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.services.contracts.review.create_qwen_provider",
+        lambda: FakeProvider(
+            {
+                "summary": "未发现明显风险。",
+                "risk_level": "低风险",
+            }
+        ),
+    )
+
+    client = _client(tmp_path, monkeypatch)
+    response = client.post(
+        "/api/contracts/run",
+        json={"mode": "review", "text": "合同约定验收合格后付款，并设置违约责任。"},
+    )
+
+    assert response.status_code == 200
+    result = response.json()["review_result"]
+    assert result["risk_items"]
+    assert result["clause_reviews"]
+    assert not result["summary"].startswith("未发现明显风险")
+
+
 def test_generate_sales_contract_shape(tmp_path: Path, monkeypatch) -> None:
     expected = {
         "title": "货物买卖合同",
@@ -198,10 +295,15 @@ def test_parse_json_object_repairs_markdown_wrapper() -> None:
 
 
 def test_prompts_describe_metadata_and_review_anchor_fields() -> None:
+    chat_prompt = open("app/prompts/chat.md", encoding="utf-8").read()
     review_prompt = open("app/prompts/review.md", encoding="utf-8").read()
     generate_prompt = open("app/prompts/generate.md", encoding="utf-8").read()
     intent_prompt = open("app/prompts/intent.md", encoding="utf-8").read()
 
+    assert "小契" in chat_prompt
+    assert "契合产品内的 AI 合同助手" in chat_prompt
+    assert "不要直接输出审查报告" in chat_prompt
+    assert "不要直接输出完整草案" in chat_prompt
     for field in ("clause_id", "clause_title", "original_excerpt", "start_offset", "end_offset"):
         assert field in review_prompt
     for field in ("contract_type", "user_role", "my_position", "focus_areas"):
@@ -209,3 +311,5 @@ def test_prompts_describe_metadata_and_review_anchor_fields() -> None:
     for field in ("contract_type", "user_role", "my_identity", "special_terms"):
         assert field in generate_prompt
     assert "合同知识咨询" in intent_prompt
+    assert "route=review" in intent_prompt
+    assert "route=generate" in intent_prompt
